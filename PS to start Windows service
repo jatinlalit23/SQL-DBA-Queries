@@ -1,0 +1,59 @@
+/*
+Powershell provides dedicated cmdlets for various options required to manage Windows services. 
+Using these cmdlets allows you to easily start, stop and restart a service and to provide information regarding these services 
+which allows you to manage these services outside of the traditional GUI approach.
+The following will illustrate the simple, yet time saving approach to managing Windows services using Powershell.
+
+You will need to run Powershell as an Administrator in order to execute commands to start and stop a service.
+
+*/
+
+----To begin, let’s display a list of all services currently available in Windows.
+
+Get-Service
+
+----CHeck for specific service
+	
+Get-Service -Name MSSQLSERVER
+
+----Example below looks for all services where sql appears in the name.
+
+Get-Service | where-object {$_.name -like "*sql*"}
+
+----In order to start a Windows service use the Start-Service cmdlet. In the example below I am illustrating how to start the MSSQLSERVER service.
+
+Start-Service MSSQLSERVER -PassThru
+
+Stop-Service MSSQLSERVER -PassThru --if any dependency is there you will get error
+	
+Stop-Service MSSQLSERVER -Force -PassThru
+
+/*
+--Completed code.
+/*
+clear-host
+ 
+$svc=Get-Service
+$i
+$i=1
+foreach($service in $svc)
+{
+if ($svc[$i].name -eq "MSSQLSERVER" -or -- example $svc[$i].name -eq "Sushil" -or
+    $svc[$i].name -eq "SQLSERVERAGENT")
+    {
+        if($svc[$i].status -eq "Stopped")
+        {
+            start-service -name $svc[$i].Name -PassThru
+        }
+        if($svc[$i].status -eq "Running")
+        {    
+            stop-service -name $svc[$i].Name -Force -PassThru
+        }
+        }
+$i++
+}
+
+*/
+
+
+*/
