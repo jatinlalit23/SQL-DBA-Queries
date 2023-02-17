@@ -1,4 +1,37 @@
---check TDE status
+--https://jackworthen.com/2020/09/10/the-correct-way-to-restore-a-tde-encrypted-database-to-a-new-server-in-sql-server/
+
+--Check TDE certificate
+USE [master]
+GO
+SELECT * FROM sys.certificates
+
+--BAckup TDE certificate
+
+USE [master]
+GO
+BACKUP CERTIFICATE CertificateName 
+TO FILE = 'D:\Backup\cert.cer'    
+WITH PRIVATE KEY ( FILE = 'D:\Backup\key.prvk',  
+ENCRYPTION BY PASSWORD = 'SuperSecretP@$$word')
+
+-- Restore or COPY certificateson target server
+
+USE [master]
+GO
+CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'SuperSecretP@$$word';
+GO
+CREATE CERTIFICATE CertificateName 
+FROM FILE = 'D:\Backup\cert.cer'
+WITH PRIVATE KEY (FILE = 'D:\Backup\key.prvk', 
+DECRYPTION BY PASSWORD = 'SuperSecretP@$$word')
+
+
+--check TDE status on database level, Databases with an encryption_state of 3 are encrypted.
+
+SELECT * FROM sys.dm_database_encryption_keys
+WHERE encryption_state = 3
+
+--check and monitor TDE status on database 
 
 SELECT DB_NAME(database_id) AS DatabaseName, 
 encryption_state, 
