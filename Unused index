@@ -1,0 +1,61 @@
+/*
+--https://jackworthen.com/tag/performance-tuning/page/2/
+
+The main columns that you want to review pertain to the 
+UserSeeks, UserScans, UserLookups and UserUpdates.
+
+User Seeks indicates how many times an index seek occurred for a particular index.  
+User Seeks are the ideal way to access data as they are the fastest as less resource intensive option.  
+You generally want to see a higher value of Seeks than Scans or Lookups.
+
+A User Scan occurs when multiple rows of data are searched in order to locate the data being pulled back by the query.  
+This is less ideal than a user seek and you want to try to avoid these if possible.
+
+User Lookups indicate the number of times a query had to pull the data from a clustered index or from the heap.
+
+User Updates indicate the number of times the index was updated due to changes within the data.
+
+In order to identify indexes that are not being used, 
+simply refer to the above columns.  
+If you see records where no UserSeeks, UserScans or UserLookups are occurring but UserUpdates are, 
+then this means that SQL Server has not used the index but is still maintaining the index.
+
+The previous screenshot shows a handful of indexes that are prime candidates for being dropped.
+
+Though this is not a step by step guide for when to drop an index, 
+it should provide you with some useful information regarding indexes that are not being used.  
+It is up to you to decide if any particular index should be dropped from your environment.
+
+Additionally, it is important to remember that the data provided by DMVs is wiped out when the SQL Server service is restarted.  
+Make sure your SQL Server has been up and running for a reasonable period of time before analyzing this data and making any decisions regarding whether 
+to keep or drop a particular index. 
+
+*/
+
+
+SELECT
+o.name AS ObjectName,
+i.name AS IndexName,
+o.create_date AS CreationDate,
+i.index_id AS IndexID,
+u.user_seeks AS UserSeeks,
+u.user_scans AS UserScans,
+u.user_lookups AS UserLookups,
+u.user_updates AS UserUpdates,
+p.TableRows
+FROM sys.dm_db_index_usage_stats u
+INNER JOIN sys.indexes i ON i.index_id = u.index_id 
+    AND u.OBJECT_ID = i.OBJECT_ID
+INNER JOIN sys.objects o ON u.OBJECT_ID = o.OBJECT_ID
+INNER JOIN (SELECT SUM(p.rows) TableRows, p.index_id, p.OBJECT_ID
+FROM sys.partitions p 
+GROUP BY p.index_id, p.OBJECT_ID) p
+    ON p.index_id = u.index_id 
+    AND u.OBJECT_ID = p.OBJECT_ID
+WHERE OBJECTPROPERTY(u.OBJECT_ID,'IsUserTable') = 1
+AND u.database_id = DB_ID()
+AND i.type_desc ='nonclustered'
+AND i.is_primary_key = 0
+AND i.is_unique_constraint = 0
+AND o.is_ms_shipped <> 1
+ORDER BY (u.user_seeks + u.user_scans + u.user_lookups)
