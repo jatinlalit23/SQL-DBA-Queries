@@ -1,0 +1,71 @@
+Light wait extended event to capture who is filling TempDB
+
+USE [MSDB]
+GO
+DECLARE @OutputFileDirectory nvarchar(max)
+DECLARE @Version numeric(18,10)
+DECLARE @TokenDate nvarchar(max)
+DECLARE @TokenTime nvarchar(max)
+DECLARE @TokenLogDirectory nvarchar(max)
+DECLARE @OutputFile nvarchar(max)
+DECLARE @XelOutputFile nvarchar(max)
+DECLARE @XemOutputFile nvarchar(max)
+ 
+   
+ 
+SET @Version = CAST(LEFT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)),CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - 1) + '.' + REPLACE(RIGHT(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)), LEN(CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max))) - CHARINDEX('.',CAST(SERVERPROPERTY('ProductVersion') AS nvarchar(max)))),'.','') AS numeric(18,10))
+ 
+  IF @Version >= 11
+  BEGIN
+    SELECT @OutputFileDirectory = [path]
+    FROM sys.dm_os_server_diagnostics_log_configurations
+  END
+  ELSE
+  BEGIN
+    SELECT @OutputFileDirectory = LEFT(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)),LEN(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max))) - CHARINDEX('\',REVERSE(CAST(SERVERPROPERTY('ErrorLogFileName') AS nvarchar(max)))))
+  END
+IF @Version >= 9.002047
+  BEGIN
+    SET @TokenDate = '$' + '(ESCAPE_SQUOTE(STRTDT))'
+    SET @TokenTime = '$' + '(ESCAPE_SQUOTE(STRTTM))'
+  END
+  ELSE
+  BEGIN
+    SET @TokenDate = '$' + '(STRTDT)'
+    SET @TokenTime = '$' + '(STRTTM)'
+  END
+  IF @Version >= 12
+  BEGIN
+    SET @TokenLogDirectory = '$' + '(ESCAPE_SQUOTE(SQLLOGDIR))'
+  END
+SET @XelOutputFile = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'Tempdb_Gwoth_Cause'+ '.xel'
+SET @XemOutputFile = COALESCE(@OutputFileDirectory,@TokenLogDirectory) + '\' + 'Tempdb_Gwoth_Cause'+ '.xem'
+ 
+ 
+Declare @SQL Nvarchar(Max)
+set @SQL = 'CREATE EVENT SESSION [Tempdb_Gwoth_Cause] ON SERVER
+ADD EVENT [sqlserver].[database_file_size_change] (
+    ACTION ( [sqlserver].[session_id], [sqlserver].[database_id],
+    [sqlserver].[client_hostname], [sqlserver].[sql_text] )
+    WHERE ( [database_id] = ( 2 )
+            AND [session_id] > ( 50 ) ) ),
+ADD EVENT [sqlserver].[databases_log_file_used_size_changed] (
+    ACTION ( [sqlserver].[session_id], [sqlserver].[database_id],
+    [sqlserver].[client_hostname], [sqlserver].[sql_text] )
+    WHERE ( [database_id] = ( 2 )
+            AND [session_id] > ( 50 ) ) )
+ADD TARGET [package0].[asynchronous_file_target] (  SET filename ='''+ @XelOutputFile +''',
+                                                    metadatafile ='''+ @XemOutputFile +''',
+                                                    max_file_size = ( 100 ) ,
+                                                    max_rollover_files = 10 )
+WITH (  MAX_MEMORY = 4096 KB ,
+        EVENT_RETENTION_MODE = ALLOW_SINGLE_EVENT_LOSS ,
+        MAX_DISPATCH_LATENCY = 1 SECONDS ,
+        MAX_EVENT_SIZE = 0 KB ,
+        MEMORY_PARTITION_MODE = NONE ,
+        TRACK_CAUSALITY = ON ,
+        STARTUP_STATE = ON );'
+ 
+Exec sp_executesql @SQL
+GO
+ALTER EVENT SESSION [Tempdb_Gwoth_Cause] ON SERVER STATE = START;
