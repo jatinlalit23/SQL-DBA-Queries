@@ -1,0 +1,174 @@
+--CHange the required parameters, server names as per your requirement.
+==========================================================================
+
+USE [msdb]
+GO
+
+/****** Object:  Job [DBRefresh_Prod-to-Dev]    Script Date: 12/15/2022 7:26:11 PM ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [Database Maintenance]    Script Date: 12/15/2022 7:26:11 PM ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Database Maintenance' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Database Maintenance'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'DBRefresh_Prod-to-Dev', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'DB1--DBRefresh_Prod_to_Dev', 
+		@category_name=N'Database Maintenance', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Extract DB1 DB Permissions]    Script Date: 12/15/2022 7:26:11 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Extract DB1 DB Permissions', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'CmdExec', 
+		@command=N'SQLCMD -S VMSQL02 -dDB1 -i B:\PraveenTesting\DB1_DBPermissions.sql -o B:\PraveenTesting\DB1Permissions_BeforeRefresh.txt', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [DB1 Full Backup Restore Prod to QA]    Script Date: 12/15/2022 7:26:11 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'DB1 Full Backup Restore Prod to QA', 
+		@step_id=2, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'IF OBJECT_ID(''TEMPDB.DBO.#FILELIST'',''U'') IS NOT NULL
+DROP table #FileList
+go
+Declare @FileName nvarChar(1000)
+Declare @cmdText nvarChar(1000)
+Declare @BKFolder nvarchar(1000)
+
+set @FileName = null
+set @cmdText = null
+set @BKFolder = ''\\Vmdc\sharedbackups\'' -- SHARED FOLDER PATH HAVING FULL BACKPUS WITH .BAK EXTENSION
+
+
+create table #FileList (
+FileName nvarchar(1000),
+DepthFlag int,
+FileFlag int
+)
+
+--get all the files and folders in the backup folder and put them in temporary table
+insert into #FileList exec xp_dirtree @BKFolder,0,1
+--select * from #filelist
+
+--get the latest backup file name
+select top 1 @FileName = @BKFolder + FileName from #FileList where Filename like ''%.bak'' order by filename desc
+select @filename
+
+--kick off current users/processes
+ALTER DATABASE DB1
+SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+
+exec(''
+RESTORE DATABASE DB1 FROM  DISK = '''''' + @filename + ''''''
+WITH  RECOVERY,REPLACE,
+MOVE N''''DB1'''' TO N''''E:\SQLData\DB1.mdf'''',
+MOVE N''''DB1_log'''' TO N''''L:\SQLLogs\DB1_log.ldf'''', 
+STATS = 10'')
+
+GO
+
+ALTER DATABASE DB1
+SET MULTI_USER
+', 
+		@database_name=N'tempdb', 
+		@output_file_name=N'H:\SHAREDBACKUPS\DBRefreshLog.txt', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Re-apply QA DB Permissions]    Script Date: 12/15/2022 7:26:11 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Re-apply QA DB Permissions', 
+		@step_id=3, 
+		@cmdexec_success_code=0, 
+		@on_success_action=3, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'CmdExec', 
+		@command=N'sqlcmd -SVMSQL02 -dDB1 -i "B:\PraveenTesting\DB1Permissions_BeforeRefresh.txt"', 
+		@flags=0
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [Script to fix orphan users in QADB]    Script Date: 12/15/2022 7:26:11 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'Script to fix orphan users in QADB', 
+		@step_id=4, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'declare @name varchar(150)
+
+DECLARE cur CURSOR FOR
+    select name from master..syslogins
+
+Open cur
+
+FETCH NEXT FROM cur into @name
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+
+    EXEC sp_change_users_login ''AUTO_FIX'', @name
+
+    FETCH NEXT FROM cur into @name
+
+END
+
+CLOSE cur
+DEALLOCATE cur', 
+		@database_name=N'DB1', 
+		@flags=8
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'DB1_Refresh_Prod_to_Dev', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=1, 
+		@freq_subday_interval=0, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20180407, 
+		@active_end_date=99991231, 
+		@active_start_time=10000, 
+		@active_end_time=235959, 
+		@schedule_uid=N'e2a6b9fc-beb6-40e7-bf40-c62f1d706e19'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+GO
+
