@@ -1,0 +1,31 @@
+DECLARE @current_tracefilename VARCHAR(500);
+DECLARE @0_tracefilename VARCHAR(500);
+DECLARE @indx INT;
+SELECT @current_tracefilename = path
+FROM sys.traces
+WHERE is_default = 1;
+SET @current_tracefilename = REVERSE(@current_tracefilename);
+SELECT @indx = PATINDEX('%\%', @current_tracefilename);
+SET @current_tracefilename = REVERSE(@current_tracefilename);
+SET @0_tracefilename = LEFT(@current_tracefilename, LEN(@current_tracefilename) - @indx) + '\log.trc';
+SELECT DatabaseName,
+       te.name,
+       Filename,
+       CONVERT(DECIMAL(10, 3), Duration / 1000000e0) AS TimeTakenSeconds,
+       StartTime,
+       EndTime,
+       (IntegerData * 8.0 / 1024) AS 'ChangeInSize MB',
+       ApplicationName,
+	   Case when ApplicationName like 'SQLAgent%Job%' then (select top 1 '(SQLAgent Job - '+name +' - '+right(ApplicationName,len(ApplicationName)-charindex(':',ApplicationName)) from msdb.dbo.sysjobs SJ where UPPER(master.dbo.fn_varbintohexstr(SJ.job_id))=UPPER(substring([ApplicationName],30,34))) else ApplicationName  end  ApplicationName
+       ,HostName,
+       LoginName
+FROM ::fn_trace_gettable(@0_tracefilename, DEFAULT) t
+     INNER JOIN sys.trace_events AS te ON t.EventClass = te.trace_event_id
+WHERE
+ StartTime Between '2021-03-11 23:00:16.077'  and '2021-03-12 07:00:16.077' and 
+--(
+--trace_event_id >= 92
+    --  AND trace_event_id <= 95) and 
+	  Databasename = 'PMTDB' 
+	  --and name like '%Data File Auto Grow%'
+ORDER BY t.StartTime;
