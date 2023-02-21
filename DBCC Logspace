@@ -1,0 +1,26 @@
+DBCC Logspace Checking for all DB's: 
+===============================
+Dbcc opentran()
+go
+CREATE TABLE #logspace
+( [dbname] sysname
+, logSizeMB float
+, logSpaceUsedPct float
+, Status int);
+
+INSERT INTO #logspace
+EXEC ('DBCC SQLPERF(LOGSPACE);')
+
+SELECT dbname
+, logSizeMB
+, logSpaceUsedPct
+, logSizeMB - (logSizeMB * logSpaceUsedPct / 100) AS LogSpaceUnusedMB
+FROM #logspace
+--where dbname = 'tempdb'
+ORDER BY logSpaceUsedPct DESC;  
+drop table #logspace
+Go
+Sp_helpdb 
+
+SELECT name , [log_reuse_wait_desc]
+    FROM [master].[sys].[databases]
