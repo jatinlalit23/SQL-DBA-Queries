@@ -1,0 +1,32 @@
+--Script-1: 
+
+SELECT p.spid, j.name
+FROM   master.dbo.sysprocesses p
+JOIN   msdb.dbo.sysjobs j ON 
+   master.dbo.fn_varbintohexstr(convert(varbinary(16), job_id)) COLLATE Latin1_General_CI_AI = 
+   substring(replace(program_name, 'SQLAgent - TSQL JobStep (Job ', ''), 1, 34)   
+   ===================================================================================
+      --Script-2: 
+      
+   -- This fetches Jobid, job name
+   
+SELECT 
+'SQLAgent - TSQL JobStep (Job 0x'+ 
+CONVERT(char(32),CAST(j.job_id AS binary(16)),2) + 
+' : Step ' + 
+CAST(js.step_id AS VARCHAR(3)) + 
+')', j.job_id, j.name 
+FROM msdb.dbo.sysjobs AS j 
+INNER JOIN msdb.dbo.sysjobsteps AS js 
+ON j.job_id = js.job_id;
+===================================================================================
+--Script-3:
+
+DECLARE @jobId BINARY(16)
+SELECT @jobId = CONVERT(uniqueidentifier, job_id) FROM msdb.dbo.sysjobs
+WHERE name = 'Your_Job_Name'
+===================================================================================
+Script-4: 
+
+select name as JobName,job_id,enabled, * from msdb..sysjobs 
+where job_id = 0xD5486D1E1F0A9445836E4D29335FB12F   --replace the job id here to get job name you are looking for.
