@@ -1,0 +1,48 @@
+RESOLVING HIGH CPU USAGE IN SQL SERVER
+
+https://blog.sqlservercitation.com/2017/08/08/resolving-high-cpu-usage-in-sql-server/
+
+/* 
+Disclaimer: I am not sure for the origin of this script/query.
+This query is used in our team to identify and resolve high CPU issue
+*/
+--define the temptables that will hold intermediary results
+IF OBJECT_ID('tempdb..#dbcc') IS NOT NULL
+    DROP TABLE #dbcc
+create table #dbcc(c1 varchar(15), c2 int, c3 varchar(255),spid int default 0)
+IF OBJECT_ID('tempdb..#cpugroups') IS NOT NULL
+    DROP TABLE #cpugroups
+create table #cpugroups (sql_handle binary(20), sql_text nvarchar(50),total_cpu bigint,total_io bigint,total_sessions int, total_threads int)
+--take the SPID groups that are running same code (NOT statement)
+insert into #cpugroups
+select top 10 sql_handle,substring((select text from fn_get_sql(sql_handle)),1,50), SUM(CPU) TotalCPUForGroup, SUM(physical_io) TotalIOForGroup, COUNT(distinct spid) TotalNoOfSessions,COUNT(*) TotalNoOfThreads
+from master..sysprocesses (nolock) 
+where spid>50 and status<>'sleeping'
+and sql_handle<>0x0 and spid<>@@spid
+group by sql_handle 
+order by TotalCPUForGroup desc
+declare @sql nvarchar(max)
+declare @t table (spid int)
+INSERT INTO @t
+SELECT DISTINCT spid FROM master..sysprocesses WHERE spid>50 and sql_handle in (select sql_handle from #cpugroups)
+declare @spid int
+WHILE EXISTS(select * from @t)
+BEGIN
+  select top 1 @spid=spid from @t
+  set @sql='dbcc inputbuffer('+LTRIM(STR(@spid))+')'
+  --try to retrieve the original command for all SPIDs
+  BEGIN TRY
+    INSERT INTO #dbcc(c1, c2, c3)
+    EXEC (@sql)
+    update #dbcc 
+    set spid=@spid 
+    where spid=0
+    
+  END TRY
+  BEGIN CATCH
+  END CATCH
+  delete from @t where spid=@spid
+END
+select * from #cpugroups
+select c3 [sql_text], count(*) NoOfSessionsRunning from #dbcc group by c3 order by 2 desc
+select * from #dbcc
