@@ -1,0 +1,232 @@
+$ErrorActionPreference = "Stop"
+Try
+{
+## Mail Srver Settings
+
+$To = "avi.gangwarious@gmail.com"
+$SMTPServer = "smtp.gmail.com"
+$SMTPPort = "587"
+$From="audarvind@gmail.com"
+
+#$credential = get-credential
+#Generating credential
+$encrypted = Get-Content "c:\sanitychecker\encryptedpwd.txt" | ConvertTo-SecureString
+$credential= New-Object System.Management.Automation.PsCredential("audarvind@gmail.com", $encrypted)
+
+
+
+[System.Reflection.Assembly]::LoadWithPartialName('Microsoft.SqlServer.SqlWmiManagement')| Out-Null
+$smowmi = New-Object Microsoft.SqlServer.Management.Smo.Wmi.ManagedComputer $HostName
+
+
+$SQLSvcs = $smowmi.Services | where-object {($_.name -Like "MSSQL$*" -or $_.name -eq "MSSQLSERVER" ) -and $_.StartMode -eq "auto" -and $_.ServiceState -ne "Running"}
+
+foreach ($svc in $SQLSvcs)
+{ 
+$svc.start()
+
+}
+
+
+
+
+sleep -Milliseconds 500
+
+$notrunning = $smowmi.Services | where-object {$_.StartMode -eq "auto" -and $_.ServiceState -ne "Running"}
+
+foreach ($svc in $notrunning)
+{ 
+$svc.start()
+#write-host $svc.name
+}
+
+sleep -Milliseconds 500
+
+
+
+$F_SvcStopped=0
+$F_DBsDpwn=0
+$F_Sanity_Checked_passed=1
+$message_body="`nServer $env:COMPUTERNAME has come online. Following is the last reboot information: "
+
+### Get last Reboot Info###
+$message_body+= get-eventlog system | where-object {$_.eventid -eq 1074} | select -first 1 |select timegenerated,message |format-list |out-string 
+
+$message_body+="`n`n`All the SQL Services have been started and running fine "
+
+##### Checking if Still some service is not running and capturing the error from event viewer ###
+$StillNotRunning = $smowmi.Services | where-object {$_.StartMode -eq "auto" -and $_.ServiceState -ne "Running"}
+
+
+foreach ($svc in $StillNotRunning)
+{ 
+
+$maxRepeat = 2
+
+while ( $svc.ServiceState -ne "Running" -AND $maxRepeat -ne 0 ) 
+
+{
+sleep -Milliseconds 500
+$svc.refresh()
+$maxRepeat--
+}
+
+
+if ($maxRepeat -eq 0 )
+{
+$F_Sanity_Checked_passed=0
+if (!$F_SvcStopped) {$message_body += "Except below Service(s):`n`n"}
+$F_SvcStopped=1
+$ServiceDisplayName=$svc.DisplayName
+$SvcSearchStr="*$ServiceDisplayName*"
+#;Level='2'
+$ErrorMessage=Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Service Control Manager'} | Where-Object {$_.Message -Like 
+$SvcSearchStr} | select -first 1  |select TimeCreated,Message |format-list |out-string 
+$message_body += "Servicename : $ServiceDisplayName $ErrorMessage `n"
+
+}
+
+}
+
+If ($F_SvcStopped) {$message_body += "`nIf the information in Service start failure message is not sufficient to troubleshoot please check the respective Error Log Files for each SQL Services`n`n"}
+
+
+
+
+
+$SQLRunningSvcs = $smowmi.Services | where-object {($_.name -Like "MSSQL$*" -or $_.name -eq "MSSQLSERVER") -and $_.ServiceState -eq "Running"}
+
+
+
+foreach ($svc in $SQLRunningSvcs)
+{
+$instancename=$svc.name.split('$')[1]
+
+if ($svc.name -eq "MSSQLSERVER") {$Servername=$env:COMPUTERNAME} else {$servername="$env:COMPUTERNAME\$instancename"}
+#$servername
+
+
+$DownDBs=invoke-sqlcmd -Server $Servername -database "master" -query "select name,state_desc from sys.databases where state > 0" |out-string
+$DBStates=invoke-sqlcmd -Server $Servername -database "master" -query "select distinct state from sys.databases" |out-string
+if(!$DownDBs) {$message_body += "`nAll the Databases are up and running on SQL Server instance: $Servername`n"} 
+else {
+$F_Sanity_Checked_passed=0
+
+$message_body += "`nBelow Databases are found in unhealty state on SQL Server instance: $servername`n$DownDBs`n"
+}
+
+#$DownDBs.gettype()
+
+
+if($DBStates -Like "*1*") {$message_body +="`nDatabases in RESTORING state should be checked later on"}
+if($DBStates -Like "*3*") {$message_body +="`nDatabases in RECOVERY_PENDING state indicate that database files are not found on filesystem"}
+if($DBStates -Like "*4*") {$message_body +="`nDatabases in SUSPECT state indicate that there is data corruption inside the database"}
+if($DBStates -Like "*5*") {$message_body +="`nDatabases in EMERGENCY indicate it was put in emergency mode by DBA to carry out emergency maintenance like repairing 
+form SUSPECT or RECOVERY_PENDING state"}
+if($DBStates -Like "*6*") {$message_body +="`nDatabases in OFFLINE state can be ignored granted they were put in offline mode intentionally"
+$F_Sanity_Checked_passed=1} #Being Offline is considered Sanity check passed
+if($DBStates -Like "*7*") {$message_body +="`nDatabases in COPYING indicates that database is part of Azure Active Geo-Replication"}
+if($DBStates -Like "*10*") {$message_body +="`nDatabases in OFFLINE_SECONDARY indicates that database is part of Azure Active Geo-Replication"}
+if($DBStates -Like "*2*") {$message_body +="`nDatabases in RECOVERING state indicate that database is still recovering. You will get another update mail regarding same with in 5 Minutes. If there are databases still in Recovering state in update mail"}
+
+
+
+
+
+if($F_Sanity_Checked_passed)
+{$From="SanityChecker_Success@yourdomain.com"
+$message_subject="Sanity Check completed with Success on server $Servername"}
+else
+{$From="SanityChecker_Failed@yourdomain.com"
+$message_subject="Sanity Check Failed !!! on server $Servername"}
+
+
+
+
+$Subject = $message_subject
+$Body = $message_body
+
+## -UseSSL and -Credential are required to work with Gmail or any other mail server which requires Authentication and SSL. Remove them if not needed for your mail server
+Send-MailMessage -From $From -to $To -Subject $Subject -Body $Body -SmtpServer $SMTPServer -port $SMTPPort -UseSSL -Credential $credential
+
+
+
+
+
+
+
+$RecoveringDBs=invoke-sqlcmd -Server $Servername -database "master" -query "select name,state_desc from sys.databases where state = 2" |out-string
+if($RecoveringDBs) 
+{
+
+$message_subject="Status Update on Databases with RECOVERING state on server $servername"
+
+$maxrepeat=10
+while ($RecoveringDBs -and !$maxrepeat)
+{
+sleep -Milliseconds 500
+$RecoveringDBs=invoke-sqlcmd -Server $Servername -database "master" -query "select name,state_desc from sys.databases where state = 2" |out-string
+$maxRepeat--
+}
+
+
+if (!$maxrepeat)
+{
+$F_Sanity_Checked_passed=0
+$message_body="Following Databases are still in recovering state even after waiting for 5 Minutes: `n$RecoveringDBs`nPlease check why it is taking such a long time. If it is expected due to large size of database or large uncommitted transaction before server went down then please wait and check again in sometime by connecting to server using SSMS"
+}
+else
+{
+$F_Sanity_Checked_passed=1
+$message_body="All the databases which were in RECOVERING state have been recovered successfully. Please check last sanity check mail for this server for rest of the details."
+}
+
+
+
+
+
+if($F_Sanity_Checked_passed){$From="SanityChecker_Success@yourdomain.com"}
+else{$From="SanityChecker_Failed@yourdomain.com"}
+
+
+$Subject = $message_subject
+$Body = $message_body
+
+## -UseSSL and -Credential are required to work with Gmail or any other mail server which requires Authentication and SSL. Remove them if not needed for your mail server
+Send-MailMessage -From $From -to $To -Subject $Subject -Body $Body -SmtpServer $SMTPServer -port $SMTPPort -UseSSL -Credential $credential
+
+
+}
+
+
+
+
+}
+
+}
+
+Catch
+{
+$ErrorMessage="SanityChecker failed to run on server $env:COMPUTERNAME.`nIt requires Powershell version 3.0 or higher and working SQL Server Configuration Manager to run.`n`nIf SanityChecker script is run with a limited user account other than NT AUTHORITY\SYSTEM then make sure the user has permission to Run batch job and permission to read event viewer logs at OS level additionally it should also have permission of View Server State at SQL server level.`nIf All of the above holds true then look into actual error as follows and try to troubleshoot`n`n"
+$ErrorMessage += $_.Exception.Message
+
+$From="SanityChecker_Failed@yourdomain.com"
+
+
+$Subject = "SanityChecker failed to run on server $env:COMPUTERNAME !!!"
+$Body = $ErrorMessage
+
+## -UseSSL and -Credential are required to work with Gmail or any other mail server which requires Authentication and SSL. Remove them if not needed for your mail server
+Send-MailMessage -From $From -to $To -Subject $Subject -Body $Body -SmtpServer $SMTPServer -port $SMTPPort -UseSSL -Credential $credential
+
+Break
+}
+Finally
+{
+
+    $Time=Get-Date
+    "SanityChecker ran at $Time" | out-file c:\SanityChecker\SanityCheckerRunAttempts.log -append
+}
+
+
+ 
