@@ -1,0 +1,63 @@
+--this is for quick find error of dbcc check db on sql database
+--step 1 create a function
+--step 2 create sp
+--step 3 execute sp
+
+--https://www.mssqltips.com/sqlservertip/4626/script-to-quickly-find-sql-server-dbcc-checkdb-errors/
+
+USE master;
+GO
+
+CREATE FUNCTION dbo.GetStringBetween (@str varchar(500), @str1 varchar(30), @str2 varchar(30))
+RETURNS varchar(200)
+AS
+BEGIN
+   DECLARE @Result varchar(200)
+   DECLARE @p1 int
+   DECLARE @p2 int
+   SET @p1 = charindex (@str1 , @str ,1)
+   SET @p2 = charindex (@str2 , @str ,1)
+   RETURN rtrim(ltrim(substring (@str, @p1 + len(@str1) , @p2 - len(@str1) - @p1  )))
+END
+GO
+
+--step 2 SQL Stored Procedure
+USE master;
+GO
+
+CREATE PROCEDURE dbo.usp_check_dbcccheckdbresults
+as
+BEGIN
+   SET NOCOUNT ON
+   
+   CREATE TABLE #tempLogRes 
+      (LogDate datetime,
+       ProcessInfo varchar(100),
+       TextLine varchar(500))
+
+   INSERT #tempLogRes EXEC sp_readerrorlog 0, 1, 'DBCC CHECKDB'
+
+   SELECT 
+      LogDate,
+      dbo.GetStringBetween (TextLine ,'(',')' ) AS CHECKED_DB,
+      dbo.GetStringBetween (TextLine ,'found','errors' ) AS ERRORS_FOUND,
+      dbo.GetStringBetween (TextLine ,'repaired','errors.' ) AS ERRORS_REPAIRED
+   FROM 
+      #tempLogRes 
+   WHERE 
+      TextLine like '%DBCC CHECKDB%' 
+      AND LogDate > GETDATE() - 1
+
+   DROP TABLE #tempLogRes
+  
+   SET NOCOUNT OFF
+END
+GO
+
+--step 3 run query to get error output Procedure
+use master 
+go 
+exec dbo.usp_check_dbcccheckdbresults
+go 
+
+
