@@ -1,0 +1,59 @@
+At Source Server:  
+ 
+USE SSISDB; 
+GO 
+create master key encryption by password = 'Migration_Password123!'  
+go 
+--ALTER MASTER KEY ADD ENCRYPTION BY PASSWORD = 'Passord@12$#' 
+go 
+--ALTER MASTER KEY FORCE REGENERATE WITH ENCRYPTION BY PASSWORD = 'Passord@12$#' 
+GO 
+ 
+USE SSISDB; 
+GO 
+CREATE CERTIFICATE [SSISDB_Cert] WITH SUBJECT = 'Confidential@123#'  
+Go 
+ 
+USE SSISDB; 
+GO 
+BACKUP CERTIFICATE SSISDB_Cert 
+TO FILE = 'F:\SQLBackups\Hyderabad\SSISDB__Certificate_BACKUP.cer' 
+WITH PRIVATE KEY 
+( 
+    FILE = 'F:\SQLBackups\Hyderabad\SSISDB_CERTIFICATE_PRIVATE_KEY.key' 
+   ,ENCRYPTION BY PASSWORD = 'Migration_Password123!' 
+); 
+go 
+ ================================================================ 
+ 
+USE [master] 
+go
+BACKUP DATABASE [SSISDB] 
+TO DISK = N'F:\SQLBackups\Hyderabad\SSISDB2016.bak' 
+WITH COMPRESSION,STATS = 20,CHECKSUM 
+  
+At Destination Server:  
+======================== 
+USE [master]  
+go
+RESTORE DATABASE [SSISDB] 
+FROM DISK = N'F:\SQLBackups\Delhi\SSISDB2016.bak' 
+WITH 
+    FILE = 1, 
+    MOVE N'data' TO N'B:\SQLBinaries\Delhi\MSSQL13.DELHI\MSSQL\DATA\SSISDB.mdf', 
+    MOVE N'log'  TO N'B:\SQLBinaries\Delhi\MSSQL13.DELHI\MSSQL\DATA\SSISDB.ldf', 
+    NOUNLOAD, 
+    STATS = 25 
+; 
+GO 
+ 
+USE SSISDB 
+go 
+-- open the DMK using the password we just added on Source Server 
+OPEN MASTER KEY DECRYPTION BY PASSWORD = 'Passord@12$#' 
+  
+-- encrypt the DMK with SMK of the new server 
+ALTER MASTER KEY ADD ENCRYPTION BY SERVICE MASTER KEY 
+  
+-- tidy up 
+CLOSE MASTER KEY 
