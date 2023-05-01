@@ -1,37 +1,105 @@
---SQL Cluster Failover Time and Node Name
-From <https://sqlgeekspro.com/script-get-sql-cluster-failover-time-node-name/> 
+-- Create the SQL Agent Job using below script
+-- Change the backup shared path as per your requirement
+-- Change the DBName as per your reuirement.
+-- Change the job schdule as per your requirement
 
-CREATE TABLE #ErrorLog(
-   LogDate DATETIME,
-   ErrorSource NVARCHAR(MAX),
-   ErrorMessage NVARCHAR(MAX)
-)
-CREATE TABLE #NumberOfLogs(
-   ID INT PRIMARY KEY NOT NULL,
-   LogDate DATETIME NOT NULL,
-   LogFileSize bigint
-)
-INSERT INTO #NumberOfLogs(ID,LogDate,LogFileSize)
-EXEC master.dbo.xp_enumerrorlogs
-DECLARE @ErrorLogID INT
-DECLARE cNumberOfLogs CURSOR FOR
-   SELECT ID
-   FROM #NumberOfLogs
-OPEN cNumberOfLogs
-FETCH NEXT FROM cNumberOfLogs INTO @ErrorLogID
-   WHILE @@FETCH_STATUS = 0
-   
-   BEGIN
-       INSERT INTO #ErrorLog(LogDate,ErrorSource,ErrorMessage)
-       EXEC sp_readerrorlog @ErrorLogID, 1, 'NETBIOS'
-        
-       INSERT INTO #ErrorLog(LogDate,ErrorSource,ErrorMessage)
-       EXEC sp_readerrorlog @ErrorLogID, 1, 'SQL Server is terminating'
-       FETCH NEXT FROM cNumberOfLogs INTO @ErrorLogID
-   END 
-   
-CLOSE cNumberOfLogs
-DEALLOCATE cNumberOfLogs
-SELECT LogDate, ErrorMessage FROM #ErrorLog
-DROP TABLE #ErrorLog
-DROP TABLE #NumberOfLogs
+
+USE [msdb]
+GO
+
+/****** Object:  Job [Source_DB1_FullBackup_COPY_ONLY]    Script Date: 12/15/2022 7:20:23 PM ******/
+BEGIN TRANSACTION
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+/****** Object:  JobCategory [Database Maintenance]    Script Date: 12/15/2022 7:20:23 PM ******/
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Database Maintenance' AND category_class=1)
+BEGIN
+EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'Database Maintenance'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+
+END
+
+DECLARE @jobId BINARY(16)
+EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'Source_DB1_FullBackup_COPY_ONLY', 
+		@enabled=1, 
+		@notify_level_eventlog=0, 
+		@notify_level_email=0, 
+		@notify_level_netsend=0, 
+		@notify_level_page=0, 
+		@delete_level=0, 
+		@description=N'No description available.', 
+		@category_name=N'Database Maintenance', 
+		@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+/****** Object:  Step [DB1_FullBackup_Copy_Only]    Script Date: 12/15/2022 7:20:25 PM ******/
+EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'DB1_FullBackup_Copy_Only', 
+		@step_id=1, 
+		@cmdexec_success_code=0, 
+		@on_success_action=1, 
+		@on_success_step_id=0, 
+		@on_fail_action=2, 
+		@on_fail_step_id=0, 
+		@retry_attempts=0, 
+		@retry_interval=0, 
+		@os_run_priority=0, @subsystem=N'TSQL', 
+		@command=N'USE MASTER
+go
+DECLARE @name VARCHAR(50) -- database name  
+DECLARE @path VARCHAR(256) -- path for backup files  
+DECLARE @fileName VARCHAR(256) -- filename for backup  
+DECLARE @fileDate VARCHAR(20) -- used for file name
+  
+ -- specify database backup directory
+ SET @path = ''\\Vmdc\sharedbackups\''                        -- Change this to your required backup path
+ 
+ -- specify filename format
+ --SELECT @fileDate = CONVERT(VARCHAR(20),GETDATE(),112) 
+SELECT @fileDate = CONVERT(VARCHAR(20),GETDATE(),112) + ''_'' + REPLACE(CONVERT(VARCHAR(20),GETDATE(),108),'':'','''')
+DECLARE db_cursor CURSOR READ_ONLY FOR  
+SELECT name 
+FROM master.sys.databases 
+WHERE name IN (''DB1'')  -- exclude these databases
+ AND state = 0 -- database is online
+ AND is_in_standby = 0 -- database is not read only for log shipping
+  
+ OPEN db_cursor   
+FETCH NEXT FROM db_cursor INTO @name   
+ 
+ WHILE @@FETCH_STATUS = 0   
+BEGIN   
+   SET @fileName = @path + @name + ''_'' + @fileDate + ''.BAK''  
+   BACKUP DATABASE @name TO DISK = @fileName  
+   WITH COMPRESSION, Copy_only, Stats=10                                 -- Comment this if SQL Edition is Standard or if compression doesn''t work
+    FETCH NEXT FROM db_cursor INTO @name   
+END   
+CLOSE db_cursor   
+DEALLOCATE db_cursor
+', 
+		@database_name=N'master', 
+		@flags=8
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobschedule @job_id=@jobId, @name=N'DB1_FullBackup_Daily', 
+		@enabled=1, 
+		@freq_type=4, 
+		@freq_interval=1, 
+		@freq_subday_type=1, 
+		@freq_subday_interval=0, 
+		@freq_relative_interval=0, 
+		@freq_recurrence_factor=0, 
+		@active_start_date=20221215, 
+		@active_end_date=99991231, 
+		@active_start_time=0, 
+		@active_end_time=235959, 
+		@schedule_uid=N'9d862688-4775-4258-b82b-113e3cf45c3e'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
+COMMIT TRANSACTION
+GOTO EndSave
+QuitWithRollback:
+    IF (@@TRANCOUNT > 0) ROLLBACK TRANSACTION
+EndSave:
+GO
+
