@@ -123,3 +123,89 @@ END
 
 CLOSE dbCursor
 DEALLOCATE dbCursor
+
+
+----------------------------------------
+
+DECLARE @dbName NVARCHAR(255);
+DECLARE @userName NVARCHAR(255);
+DECLARE @sqlCommand NVARCHAR(MAX);
+DECLARE @loginName NVARCHAR(255);
+DECLARE @domainPrefix NVARCHAR(255) = 'YourDomain\\'; -- Replace with your domain prefix
+DECLARE @userType NVARCHAR(5);  -- To distinguish between SQL and domain users
+
+DECLARE dbCursor CURSOR FOR
+    SELECT name
+    FROM sys.databases
+    WHERE state_desc = 'ONLINE'  -- Only consider online databases
+      AND name NOT IN ('master', 'tempdb', 'model', 'msdb');  -- Exclude system databases
+
+OPEN dbCursor;
+
+FETCH NEXT FROM dbCursor INTO @dbName;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Create dynamic SQL to process each database
+    SET @sqlCommand = '
+    USE [' + @dbName + '];
+
+    DECLARE userCursor CURSOR FOR
+        SELECT dp.name, dp.type_desc
+        FROM sys.database_principals dp
+        LEFT JOIN sys.server_principals sp ON dp.sid = sp.sid
+        WHERE dp.type IN (''S'', ''U'')  -- SQL users (S) and Windows users (U)
+          AND sp.sid IS NULL;  -- Orphaned users
+
+    OPEN userCursor;
+
+    FETCH NEXT FROM userCursor INTO @userName, @userType;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        PRINT ''Processing user: '' + @userName + '' in database: [' + @dbName + ']''
+
+        IF @userType = ''S''
+        BEGIN
+            -- SQL User: Create SQL login if it does not exist
+            IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @userName)
+            BEGIN
+                DECLARE @createLoginCommand NVARCHAR(4000);
+                SET @createLoginCommand = ''CREATE LOGIN [' + @userName + '] WITH PASSWORD = ''StrongPassword!'';'';
+                EXEC sp_executesql @createLoginCommand;
+                PRINT ''Created SQL login: '' + @userName;
+            END
+        END
+        ELSE IF @userType = ''U''
+        BEGIN
+            -- Domain User: Create domain login if it does not exist
+            SET @loginName = @domainPrefix + @userName;
+
+            IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @loginName)
+            BEGIN
+                DECLARE @createDomainLoginCommand NVARCHAR(4000);
+                SET @createDomainLoginCommand = ''CREATE LOGIN [' + @loginName + '] FROM WINDOWS;'';
+                EXEC sp_executesql @createDomainLoginCommand;
+                PRINT ''Created Domain login: '' + @loginName;
+            END
+        END
+
+        -- Fix orphaned user by associating with the login
+        EXEC sp_change_users_login ''Auto_Fix'', @userName;
+
+        FETCH NEXT FROM userCursor INTO @userName, @userType;
+    END;
+
+    CLOSE userCursor;
+    DEALLOCATE userCursor;
+    '
+
+    -- Execute the dynamic SQL command
+    EXEC sp_executesql @sqlCommand;
+
+    FETCH NEXT FROM dbCursor INTO @dbName;
+END;
+
+CLOSE dbCursor;
+DEALLOCATE dbCursor;
+
