@@ -1,0 +1,10 @@
+₹-- Generate a script of the existing logins
+USE master
+GO
+SELECT 'CREATE LOGIN ' + QUOTENAME(sp.name) + 
+       ' WITH PASSWORD = ' + CONVERT(NVARCHAR(MAX), sp.password_hash, 1) + 
+       ' HASHED, SID = ' + CONVERT(NVARCHAR(MAX), sp.sid, 1) + 
+       ', CHECK_POLICY = ' + CASE WHEN sp.is_policy_checked = 1 THEN 'ON' ELSE 'OFF' END +
+       ', CHECK_EXPIRATION = ' + CASE WHEN sp.is_expiration_checked = 1 THEN 'ON' ELSE 'OFF' END
+FROM sys.sql_logins sp
+WHERE sp.is_disabled = 0
