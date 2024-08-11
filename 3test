@@ -1,0 +1,125 @@
+DECLARE @dbName NVARCHAR(255);
+DECLARE @userName NVARCHAR(255);
+DECLARE @sqlCommand NVARCHAR(max);
+DECLARE @loginName NVARCHAR(255);
+DECLARE @password NVARCHAR(255);  -- Default password for new logins
+
+-- Define a default password for new logins (ensure this complies with your security policy)
+SET @password = 'StrongPassword!';
+
+DECLARE dbCursor CURSOR FOR
+    SELECT name
+    FROM sys.databases
+    WHERE state_desc = 'ONLINE'  -- Only consider online databases
+      AND name NOT IN ('master', 'tempdb', 'model', 'msdb');  -- Exclude system databases
+
+OPEN dbCursor;
+
+FETCH NEXT FROM dbCursor INTO @dbName;
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Create dynamic SQL to process each database
+    SET @sqlCommand = '
+    USE [' + @dbName + '];
+
+    DECLARE userCursor CURSOR FOR
+        SELECT dp.name
+        FROM sys.database_principals dp
+        LEFT JOIN sys.server_principals sp ON dp.sid = sp.sid
+        WHERE sp.sid IS NULL AND dp.type = ''S'';  -- Only consider SQL users
+
+    OPEN userCursor;
+
+    FETCH NEXT FROM userCursor INTO @userName;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        PRINT ''Processing user: '' + @userName + '' in database: [' + @dbName + ']''
+
+        -- Create login if it does not exist
+        IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @userName)
+        BEGIN
+            DECLARE @createLoginCommand NVARCHAR(4000);
+            SET @createLoginCommand = ''CREATE LOGIN [' + @userName + '] WITH PASSWORD = ''''' + @password + ''''';'';
+            EXEC sp_executesql @createLoginCommand;
+            PRINT ''Created login: '' + @userName;
+        END
+
+        -- Fix orphaned user by associating with the login
+        EXEC sp_change_users_login ''Auto_Fix'', @userName;
+
+        FETCH NEXT FROM userCursor INTO @userName;
+    END;
+
+    CLOSE userCursor;
+    DEALLOCATE userCursor;
+    '
+
+    -- Execute the dynamic SQL command
+    EXEC sp_executesql @sqlCommand;
+
+    FETCH NEXT FROM dbCursor INTO @dbName;
+END;
+
+CLOSE dbCursor;
+DEALLOCATE dbCursor;
+
+
+_--------------_-_---+--+--+((())))))]
+
+
+DECLARE @dbName NVARCHAR(255)
+DECLARE @sqlCommand NVARCHAR(max)
+
+DECLARE dbCursor CURSOR FOR
+    SELECT name
+    FROM sys.databases
+    WHERE state_desc = 'ONLINE'  -- Only consider online databases
+      AND name NOT IN ('master', 'tempdb', 'model', 'msdb')  -- Exclude system databases
+
+OPEN dbCursor
+
+FETCH NEXT FROM dbCursor INTO @dbName
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Create the dynamic SQL command to fix orphaned users in each database
+    SET @sqlCommand = '
+    USE [' + @dbName + '];
+
+    -- Fix orphaned users
+    DECLARE @userName NVARCHAR(255);
+
+    DECLARE userCursor CURSOR FOR
+        SELECT UserName = dp.name
+        FROM sys.database_principals dp
+        LEFT JOIN sys.server_principals sp ON dp.sid = sp.sid
+        WHERE sp.sid IS NULL AND dp.type = ''S'';  -- Only consider SQL users
+
+    OPEN userCursor
+
+    FETCH NEXT FROM userCursor INTO @userName
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        PRINT ''Fixing orphaned user: '' + @userName + '' in database: [' + @dbName + ']''
+
+        -- Attempt to auto-fix the orphaned user
+        EXEC sp_change_users_login ''Auto_Fix'', @userName;
+
+        FETCH NEXT FROM userCursor INTO @userName
+    END
+
+    CLOSE userCursor
+    DEALLOCATE userCursor;
+    '
+
+    -- Execute the dynamic SQL command
+    EXEC sp_executesql @sqlCommand
+
+    FETCH NEXT FROM dbCursor INTO @dbName
+END
+
+CLOSE dbCursor
+DEALLOCATE dbCursor
