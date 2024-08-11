@@ -1,0 +1,86 @@
+To recreate deleted SQL Server Agent jobs from an MSDB backup in SQL Server, you need to restore the `msdb` database or extract the necessary job information from it and recreate the jobs manually. Here’s how you can do it:
+
+### **1. Restore `msdb` to a New Temporary Database**
+First, you'll need to restore the `msdb` backup to a new, temporary database (e.g., `msdb_temp`) so you can extract the job information.
+
+```sql
+RESTORE DATABASE msdb_temp 
+FROM DISK = 'path_to_msdb_backup.bak' 
+WITH MOVE 'msdbdata' TO 'path_to_new_mdf_file\msdb_temp.mdf', 
+MOVE 'msdblog' TO 'path_to_new_ldf_file\msdb_temp.ldf';
+```
+
+### **2. Extract Job Information**
+Once the database is restored, you can extract the job information from the `msdb_temp` database by running the following query to get the job scripts:
+
+```sql
+USE msdb_temp;
+GO
+
+SELECT 
+    'EXEC msdb.dbo.sp_add_job @job_name=N''' + j.name + ''', @enabled=' + 
+    CAST(j.enabled AS VARCHAR(1)) + ', @description=N''' + j.description + 
+    ''', @notify_level_eventlog=' + CAST(j.notify_level_eventlog AS VARCHAR(1)) + 
+    ', @notify_level_email=' + CAST(j.notify_level_email AS VARCHAR(1)) + 
+    ', @notify_level_netsend=' + CAST(j.notify_level_netsend AS VARCHAR(1)) + 
+    ', @notify_level_page=' + CAST(j.notify_level_page AS VARCHAR(1)) + 
+    ', @delete_level=' + CAST(j.delete_level AS VARCHAR(1)) + 
+    ', @category_name=N''' + c.name + ''';' AS [JobCreationScript]
+FROM dbo.sysjobs j
+JOIN dbo.syscategories c ON j.category_id = c.category_id;
+```
+
+### **3. Recreate Jobs in the Original `msdb`**
+Copy the job creation scripts from the query results and run them in the original `msdb` database to recreate the deleted jobs.
+
+### **4. Extract Job Steps and Schedules**
+To fully recreate the jobs, you also need to extract the job steps and schedules using similar queries:
+
+#### **Job Steps:**
+```sql
+USE msdb_temp;
+GO
+
+SELECT 
+    'EXEC msdb.dbo.sp_add_jobstep @job_name=N''' + j.name + 
+    ''', @step_name=N''' + s.step_name + ''', @subsystem=N''' + 
+    s.subsystem + ''', @command=N''' + s.command + ''', @database_name=N''' + 
+    s.database_name + ''';' AS [JobStepCreationScript]
+FROM dbo.sysjobsteps s
+JOIN dbo.sysjobs j ON s.job_id = j.job_id;
+```
+
+#### **Job Schedules:**
+```sql
+USE msdb_temp;
+GO
+
+SELECT 
+    'EXEC msdb.dbo.sp_add_jobschedule @job_name=N''' + j.name + 
+    ''', @name=N''' + s.name + ''', @enabled=' + CAST(s.enabled AS VARCHAR(1)) + 
+    ', @freq_type=' + CAST(s.freq_type AS VARCHAR(3)) + 
+    ', @freq_interval=' + CAST(s.freq_interval AS VARCHAR(3)) + 
+    ', @freq_subday_type=' + CAST(s.freq_subday_type AS VARCHAR(3)) + 
+    ', @freq_subday_interval=' + CAST(s.freq_subday_interval AS VARCHAR(3)) + 
+    ', @freq_relative_interval=' + CAST(s.freq_relative_interval AS VARCHAR(3)) + 
+    ', @freq_recurrence_factor=' + CAST(s.freq_recurrence_factor AS VARCHAR(3)) + 
+    ', @active_start_date=' + CAST(s.active_start_date AS VARCHAR(8)) + 
+    ', @active_start_time=' + CAST(s.active_start_time AS VARCHAR(6)) + 
+    ', @active_end_date=' + CAST(s.active_end_date AS VARCHAR(8)) + 
+    ', @active_end_time=' + CAST(s.active_end_time AS VARCHAR(6)) + ';'
+AS [JobScheduleCreationScript]
+FROM dbo.sysjobschedules s
+JOIN dbo.sysjobs j ON s.job_id = j.job_id;
+```
+
+### **5. Execute the Scripts**
+Run the extracted scripts in the original `msdb` database to recreate the job steps and schedules.
+
+### **6. Cleanup**
+Once you've restored the jobs, you can drop the temporary `msdb_temp` database:
+
+```sql
+DROP DATABASE msdb_temp;
+```
+
+This process should help you recreate the deleted jobs from an `msdb` backup.
