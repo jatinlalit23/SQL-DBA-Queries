@@ -1,0 +1,58 @@
+/*
+
+Explanation:
+Variable Declarations:
+
+@SourceDirectory: The directory where the original backup files are stored.
+@DestinationDirectory: The directory where you want to copy and rename the backup file.
+@FileName: Holds the name of the most recent .bak file found in the source directory.
+@NewFileName: The new name you want to assign to the copied file in the destination directory.
+Finding the Most Recent Backup File:
+
+xp_cmdshell is used with the dir command to list all .bak files in the source directory, sorted by date (/o-d).
+The most recent file is selected using TOP 1.
+Copying and Renaming the Backup File:
+
+The copy command is constructed to copy the most recent .bak file from the source directory to the destination directory, renaming it to LatestBackup.bak.
+If no .bak files are found, a message is printed.
+Execution:
+
+The xp_cmdshell command executes the copy and rename operation.
+Ensure that xp_cmdshell is enabled on your SQL Server instance, as it is disabled by default.
+
+*/
+
+
+USE master;
+GO
+
+-- Declare variables
+DECLARE @SourceDirectory NVARCHAR(500) = N'C:\SourceBackups\';  -- Source directory with .bak files
+DECLARE @DestinationDirectory NVARCHAR(500) = N'C:\DestinationBackups\';  -- Destination directory for copied file
+DECLARE @FileName NVARCHAR(255);
+DECLARE @NewFileName NVARCHAR(255) = N'LatestBackup.bak';  -- New name for the copied file
+DECLARE @CopyCommand NVARCHAR(1000);
+
+-- Get the most recent .bak file from the source directory
+SET @FileName = (
+    SELECT TOP 1 [name]
+    FROM xp_cmdshell('dir ' + @SourceDirectory + '*.bak /b /o-d')
+    WHERE [name] LIKE '%.bak%'
+);
+
+-- If a file was found, copy and rename it
+IF @FileName IS NOT NULL
+BEGIN
+    -- Build the copy command with renaming in the destination directory
+    SET @CopyCommand = N'copy "' + @SourceDirectory + @FileName + N'" "' + @DestinationDirectory + @NewFileName + N'"';
+
+    -- Execute the copy command
+    EXEC xp_cmdshell @CopyCommand;
+
+    PRINT 'File copied and renamed successfully.';
+END
+ELSE
+BEGIN
+    PRINT 'No .bak files found in the source directory.';
+END
+GO
