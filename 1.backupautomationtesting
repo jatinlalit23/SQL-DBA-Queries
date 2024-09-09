@@ -1,0 +1,34 @@
+USE master;
+GO
+
+DECLARE @BackupFileName NVARCHAR(500);
+DECLARE @DatabaseName NVARCHAR(128) = N'YourDatabaseName';  -- The database to restore
+DECLARE @BackupDirectory NVARCHAR(500) = N'C:\SQLBackups\';  -- The directory containing the backup files
+DECLARE @LogicalDataFile NVARCHAR(500);
+DECLARE @LogicalLogFile NVARCHAR(500);
+DECLARE @RestoreCommand NVARCHAR(MAX);
+
+-- Get the most recent backup file
+SET @BackupFileName = (
+    SELECT TOP 1 @BackupDirectory + [name]
+    FROM xp_cmdshell('dir /b /o-d ' + @BackupDirectory)
+    WHERE [name] LIKE @DatabaseName + N'_%.bak'
+);
+
+-- Get logical file names from the backup
+RESTORE FILELISTONLY
+    FROM DISK = @BackupFileName
+    INTO @LogicalDataFile, @LogicalLogFile;
+
+-- Create the RESTORE command
+SET @RestoreCommand = N'
+    RESTORE DATABASE [' + @DatabaseName + N'] 
+    FROM DISK = N''' + @BackupFileName + N''' 
+    WITH MOVE N''' + @LogicalDataFile + N''' TO N''C:\SQLData\' + @DatabaseName + N'.mdf'',
+         MOVE N''' + @LogicalLogFile + N''' TO N''C:\SQLData\' + @DatabaseName + N'_log.ldf'',
+         REPLACE, STATS = 10;
+';
+
+-- Execute the restore
+EXEC sp_executesql @RestoreCommand;
+GO
