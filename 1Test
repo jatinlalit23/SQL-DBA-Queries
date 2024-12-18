@@ -11,3 +11,56 @@ WHERE sp.is_disabled = 0
 ___________________________________________________________________________________________________
 
 {"Code":0,"Error":"17000-400","Message":"SQL server error occurred","Details":"A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: TCP Provider, error: 40 - Could not open a connection to SQL Server: Could not open a connection to SQL Server)","RequestId":null,"TraceId":null,"HelpUrl":"/SqlExceptionError"}
+_--------------------
+
+insert into Azure_tempdb_monitoring SELECT [Source] = 'dm_db_task_space_usage',
+
+    [session_id] = SU.session_id, [request_id] = SU.request_id,
+
+    [internal_objects_alloc_page_count_MB] = SU.internal_objects_alloc_page_count * 8 / 1024.0,
+
+    [user_objects_alloc_page_count_MB] = SU.user_objects_alloc_page_count * 8 / 1024.0,
+
+    [database_id] = S.database_id,
+
+    [database_name] = D.name,
+
+    [query_text] = SUBSTRING(T.text, R.statement_start_offset/2 + 1, (CASE WHEN R.statement_end_offset = -1 THEN LEN(CONVERT(nvarchar(max),T.text)) * 2 ELSE R.statement_end_offset END - R.statement_start_offset)/2),
+
+    [query_plan_current] = P1.query_plan,
+
+    --[query_plan_previous] = P2.query_plan,
+
+    [query_plan_handle] = P1.plan_handle,
+
+    [open_transactions] = S.open_transaction_count,
+
+    [login_name] = S.login_name,
+
+    [program_name] = S.program_name,
+
+    [host_name] = S.host_name,
+
+    [start_time] = R.start_time,
+
+    [status] = R.status
+
+              --into Azure_tempdb_monitoring
+
+FROM sys.dm_db_task_space_usage SU
+
+INNER JOIN sys.dm_exec_requests R ON (SU.session_id = R.session_id AND SU.request_id = R.request_id)
+
+INNER JOIN sys.dm_exec_sessions S ON R.session_id = S.session_id
+
+LEFT JOIN sys.databases D ON S.database_id = D.database_id
+
+CROSS APPLY sys.dm_exec_sql_text(R.sql_handle) T
+
+OUTER APPLY sys.dm_exec_query_statistics_xml(SU.session_id) AS P1
+
+--OUTER APPLY sys.dm_exec_query_plan_stats(P1.plan_handle) AS P2
+
+WHERE SU.internal_objects_alloc_page_count + SU.user_objects_alloc_page_count > 0
+
+ORDER BY [user_objects_alloc_page_count_MB] desc, session_id, R.request_id;
