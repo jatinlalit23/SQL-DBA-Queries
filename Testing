@@ -1,12 +1,13 @@
 SELECT  
-    s.login_name,  
-    s.host_name,  
-    c.client_net_address AS login_source,  
-    s.program_name,  
-    s.login_time,  
-    LOGINPROPERTY(s.login_name, 'LastLogonTime') AS last_login_time  
-FROM sys.dm_exec_sessions s  
-LEFT JOIN sys.dm_exec_connections c  
-    ON s.session_id = c.session_id  
-WHERE s.is_user_process = 1  
-ORDER BY s.login_time DESC;
+    sp.name AS login_name,  
+    sp.type_desc AS login_type,  
+    LOGINPROPERTY(sp.name, 'LastLogonTime') AS last_login_time,  
+    es.host_name,  
+    ec.client_net_address AS login_source  
+FROM sys.server_principals sp  
+LEFT JOIN sys.dm_exec_sessions es  
+    ON sp.name = es.login_name  
+LEFT JOIN sys.dm_exec_connections ec  
+    ON es.session_id = ec.session_id  
+WHERE sp.type IN ('S', 'U', 'G')  
+ORDER BY last_login_time DESC;
