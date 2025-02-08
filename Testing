@@ -1,13 +1,24 @@
+WITH ActiveUsers AS (
+    SELECT  
+        es.login_name,  
+        es.host_name,  
+        ec.client_net_address AS login_source,  
+        es.program_name,  
+        es.login_time  
+    FROM sys.dm_exec_sessions es  
+    LEFT JOIN sys.dm_exec_connections ec  
+        ON es.session_id = ec.session_id  
+    WHERE es.is_user_process = 1  
+)
 SELECT  
     sp.name AS login_name,  
     sp.type_desc AS login_type,  
-    LOGINPROPERTY(sp.name, 'LastLogonTime') AS last_login_time,  
-    es.host_name,  
-    ec.client_net_address AS login_source  
+    COALESCE(au.login_time, LOGINPROPERTY(sp.name, 'LastLogonTime')) AS last_login_time,  
+    au.host_name,  
+    au.login_source,  
+    au.program_name  
 FROM sys.server_principals sp  
-LEFT JOIN sys.dm_exec_sessions es  
-    ON sp.name = es.login_name  
-LEFT JOIN sys.dm_exec_connections ec  
-    ON es.session_id = ec.session_id  
+LEFT JOIN ActiveUsers au  
+    ON sp.name = au.login_name  
 WHERE sp.type IN ('S', 'U', 'G')  
 ORDER BY last_login_time DESC;
