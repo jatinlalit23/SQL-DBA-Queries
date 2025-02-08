@@ -12,8 +12,8 @@ FROM
 JOIN 
     user_logins ul ON u.user_id = ul.user_id
 WHERE 
-    DATE(ul.login_time) = CURDATE()
+    CAST(ul.login_time AS DATE) = CAST(GETDATE() AS DATE)
 GROUP BY 
-    u.user_id, ul.ip_address, ul.location, ul.device_info
+    u.user_id, u.username, u.email, ul.ip_address, ul.location, ul.device_info
 ORDER BY 
     ul.login_time DESC;
