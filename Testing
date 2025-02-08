@@ -1,27 +1,12 @@
-SELECT 
-    u.user_id,
-    u.username,
-    u.email,
-    SELECT  
-    name AS login_name,  
-    type_desc,  
-    create_date,  
-    modify_date,  
-    LOGINPROPERTY(name, 'LastLogonTime') AS last_login_time  
-FROM sys.server_principals  
-WHERE type IN ('S', 'U', 'G')  
-ORDER BY last_login_time DESC;,
-    ul.ip_address,
-    ul.location,
-    ul.device_info,
-    COUNT(ul.login_time) AS logins_per_day
-FROM 
-    users u
-JOIN 
-    user_logins ul ON u.user_id = ul.user_id
-WHERE 
-    CAST(ul.login_time AS DATE) = CAST(GETDATE() AS DATE)
-GROUP BY 
-    u.user_id, u.username, u.email, ul.ip_address, ul.location, ul.device_info
-ORDER BY 
-    ul.login_time DESC;
+SELECT  
+    s.login_name,  
+    s.host_name,  
+    c.client_net_address AS login_source,  
+    s.program_name,  
+    s.login_time,  
+    LOGINPROPERTY(s.login_name, 'LastLogonTime') AS last_login_time  
+FROM sys.dm_exec_sessions s  
+LEFT JOIN sys.dm_exec_connections c  
+    ON s.session_id = c.session_id  
+WHERE s.is_user_process = 1  
+ORDER BY s.login_time DESC;
