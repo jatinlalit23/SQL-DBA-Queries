@@ -1,0 +1,19 @@
+SELECT 
+    u.user_id,
+    u.username,
+    u.email,
+    ul.login_time,
+    ul.ip_address,
+    ul.location,
+    ul.device_info,
+    COUNT(ul.login_time) AS logins_per_day
+FROM 
+    users u
+JOIN 
+    user_logins ul ON u.user_id = ul.user_id
+WHERE 
+    DATE(ul.login_time) = CURDATE()
+GROUP BY 
+    u.user_id, ul.ip_address, ul.location, ul.device_info
+ORDER BY 
+    ul.login_time DESC;
