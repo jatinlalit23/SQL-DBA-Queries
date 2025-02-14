@@ -1,0 +1,139 @@
+Root Cause Analysis (RCA) Report
+
+Issue Summary:
+On [date], SQL Server was running, and client sessions were connected, but they experienced significant blocking. Investigation revealed that a VM backup initiated by Rubrik at 12:45 AM caused high I/O consumption, leading to SQL Server experiencing I/O bottlenecks and performance degradation. Despite the application appearing unresponsive, SQL Server itself remained operational.
+
+
+---
+
+Justification of SQL Server Health
+
+1. SQL Server Process & Services Were Running – No crashes or service restarts occurred.
+
+
+2. Active Sessions Were Being Established – New connections were still accepted, indicating SQL Server was operational.
+
+
+3. No Memory or CPU Exhaustion Observed – Resource usage remained within acceptable limits.
+
+
+4. Blocking & I/O Bottlenecks Were the Main Cause – Delayed queries due to high I/O, not a server failure.
+
+
+5. SQL Server Logs Showed No Critical Errors – Only delays related to I/O waits were found.
+
+
+6. SQL Server Performance Counters Confirmed Health – No failover events or unexpected restarts occurred.
+
+
+
+
+---
+
+Detailed Analysis & Observations
+
+1. SQL Server Status: Running without crashes; new connections were being accepted.
+
+
+2. Blocking Behavior: High I/O led to query delays, causing cascading blocking.
+
+
+3. Missed Indicators & Gaps in Monitoring:
+
+High Page Latch Waits and Page IO Latch Waits not identified early.
+
+Wait Statistics showed high PAGEIOLATCH_SH and PAGEIOLATCH_EX.
+
+Disk Latency & IOPS Checks were performed late in the investigation.
+
+
+
+
+
+---
+
+Root Cause:
+
+Excessive I/O Load from the Rubrik backup process caused high disk contention.
+
+Blocking Chains resulted from slow disk read/write performance.
+
+Delayed Diagnosis due to late identification of disk-related performance issues.
+
+
+
+---
+
+Impact Analysis:
+
+SQL Server was running but queries were significantly delayed.
+
+Blocking sessions affected application performance.
+
+Application users experienced timeouts and sluggish responses.
+
+
+
+---
+
+Corrective Actions Taken:
+
+1. Terminated the stuck Rubrik backup process.
+
+
+2. Rescheduled backups to non-peak hours.
+
+
+3. Monitored and cleared excessive blocking sessions.
+
+
+
+
+---
+
+Preventive Measures & Improvements
+
+1. Proactive Monitoring & Alerts
+
+Set up alerts for high disk latency (sys.dm_io_virtual_file_stats).
+
+Monitor wait types (PAGEIOLATCH_SH, PAGEIOLATCH_EX) for early detection.
+
+Use SQL Server Performance Counters to track disk bottlenecks.
+
+
+2. Backup Optimization
+
+Schedule VM backups outside business hours.
+
+Evaluate direct SQL native backups instead of VM-level backups.
+
+Optimize Rubrik’s snapshot behavior to prevent disk contention.
+
+
+3. Storage & I/O Optimization
+
+Review Disk IOPS and storage performance metrics regularly.
+
+Use separate storage for backups to reduce contention.
+
+Implement tiered storage with SQL data files on high-speed disks.
+
+
+4. Database Configuration Enhancements
+
+Enable Resource Governor to control backup process resource usage.
+
+Optimize TempDB disk placement to reduce contention.
+
+Periodically defragment indexes and optimize query execution plans.
+
+
+
+---
+
+Additional Action Items:
+
+
+---
+
