@@ -11,7 +11,17 @@ SQL Server processes and services remained active without crashes or restarts, a
 	While new connections were being accepted, performance issues were evident.
 	No signs of memory or CPU exhaustion were observed, with resource usage remaining within acceptable limits.
 
+Subject: RCA Report for Recent SQL Server Performance Issue
 
+Dear [Recipient's Name],
+
+I hope this email finds you well.
+
+Please find attached the Root Cause Analysis (RCA) report regarding the recent performance issues observed with the SQL Server. The report outlines the findings and provides insights into the situation, including the system's stability, performance anomalies, and resource utilization patterns during the incident.
+
+If you have any questions or require further clarification, please do not hesitate to reach out. I’ll be happy to assist.
+
+Thank you for your attention to this matter.
 
 
 Thanks and Regards,
