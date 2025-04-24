@@ -1,0 +1,19 @@
+SELECT
+    r.session_id,
+    r.status,
+    r.start_time,
+    DATEDIFF(SECOND, r.start_time, GETDATE()) AS duration_seconds,
+    r.cpu_time,
+    r.total_elapsed_time,
+    r.logical_reads,
+    r.writes,
+    r.granted_query_memory,
+    r.query_plan_hash,
+    t.text AS sql_text,
+    s.login_name,
+    s.host_name
+FROM sys.dm_exec_requests r
+JOIN sys.dm_exec_sessions s ON r.session_id = s.session_id
+CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t
+WHERE r.granted_query_memory > 0
+ORDER BY r.granted_query_memory DESC;
