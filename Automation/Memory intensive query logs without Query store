@@ -102,3 +102,30 @@ GO
 EXEC msdb.dbo.sp_add_jobserver
     @job_name = N'Monitor_MemoryGrants_And_Waits';
 GO
+
+/*  check the output of captured logs
+
+
+SELECT TOP 10
+    log_time,
+    session_id,
+    granted_query_memory * 8 AS memory_kb,
+    cpu_time,
+    logical_reads,
+    sql_text
+FROM dbo.MemoryGrantLog
+WHERE log_time >= DATEADD(HOUR, -6, GETDATE())
+ORDER BY memory_kb DESC;
+
+go
+
+SELECT
+    log_time,
+    wait_time_ms,
+    waiting_tasks_count
+FROM dbo.MemoryWaitStatsLog
+WHERE log_time >= DATEADD(HOUR, -6, GETDATE())
+ORDER BY log_time;
+
+
+*/
