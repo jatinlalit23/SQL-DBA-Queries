@@ -1,0 +1,104 @@
+-- Step 1: Create Logging Tables
+USE [YourMonitoringDB];  -- 🔁 Replace with your DB name for logging
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'MemoryGrantLog')
+BEGIN
+    CREATE TABLE dbo.MemoryGrantLog (
+        log_time DATETIME DEFAULT GETDATE(),
+        session_id INT,
+        start_time DATETIME,
+        cpu_time INT,
+        logical_reads BIGINT,
+        granted_query_memory INT,
+        sql_text NVARCHAR(MAX)
+    );
+END
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'MemoryWaitStatsLog')
+BEGIN
+    CREATE TABLE dbo.MemoryWaitStatsLog (
+        log_time DATETIME DEFAULT GETDATE(),
+        wait_time_ms BIGINT,
+        waiting_tasks_count BIGINT
+    );
+END
+GO
+
+-- Step 2: Create SQL Agent Job
+USE msdb;
+GO
+
+IF EXISTS (SELECT * FROM msdb.dbo.sysjobs WHERE name = 'Monitor_MemoryGrants_And_Waits')
+BEGIN
+    EXEC msdb.dbo.sp_delete_job @job_name = 'Monitor_MemoryGrants_And_Waits';
+END
+GO
+
+EXEC msdb.dbo.sp_add_job
+    @job_name = N'Monitor_MemoryGrants_And_Waits',
+    @enabled = 1,
+    @description = N'Logs high memory grants and RESOURCE_SEMAPHORE waits every 10 minutes',
+    @start_step_id = 1;
+GO
+
+-- Step 3: Add Step 1 - Log Memory Grants
+EXEC msdb.dbo.sp_add_jobstep
+    @job_name = N'Monitor_MemoryGrants_And_Waits',
+    @step_name = N'Log Memory Grants',
+    @subsystem = N'TSQL',
+    @database_name = N'YourMonitoringDB',  -- 🔁 Replace with your logging DB
+    @command = N'
+    INSERT INTO dbo.MemoryGrantLog (session_id, start_time, cpu_time, logical_reads, granted_query_memory, sql_text)
+    SELECT
+        r.session_id,
+        r.start_time,
+        r.cpu_time,
+        r.logical_reads,
+        r.granted_query_memory,
+        t.text
+    FROM sys.dm_exec_requests r
+    CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t
+    WHERE r.granted_query_memory > 0;',
+    @on_success_action = 3,  -- Go to next step
+    @retry_attempts = 1,
+    @retry_interval = 5;
+GO
+
+-- Step 4: Add Step 2 - Log RESOURCE_SEMAPHORE Waits
+EXEC msdb.dbo.sp_add_jobstep
+    @job_name = N'Monitor_MemoryGrants_And_Waits',
+    @step_name = N'Log RESOURCE_SEMAPHORE Waits',
+    @subsystem = N'TSQL',
+    @database_name = N'YourMonitoringDB',  -- 🔁 Replace with your logging DB
+    @command = N'
+    INSERT INTO dbo.MemoryWaitStatsLog (wait_time_ms, waiting_tasks_count)
+    SELECT
+        wait_time_ms,
+        waiting_tasks_count
+    FROM sys.dm_os_wait_stats
+    WHERE wait_type = ''RESOURCE_SEMAPHORE'';',
+    @on_success_action = 1,  -- Quit with success
+    @retry_attempts = 1,
+    @retry_interval = 5;
+GO
+
+-- Step 5: Schedule the Job (Every 10 Minutes)
+EXEC msdb.dbo.sp_add_schedule
+    @schedule_name = N'Every_10_Minutes',
+    @freq_type = 4,  -- Daily
+    @freq_interval = 1,
+    @freq_subday_type = 4,  -- Minutes
+    @freq_subday_interval = 10,
+    @active_start_time = 0;  -- Midnight
+GO
+
+-- Step 6: Attach the Schedule to the Job
+EXEC msdb.dbo.sp_attach_schedule
+    @job_name = N'Monitor_MemoryGrants_And_Waits',
+    @schedule_name = N'Every_10_Minutes';
+GO
+
+-- Step 7: Add Job to Server
+EXEC msdb.dbo.sp_add_jobserver
+    @job_name = N'Monitor_MemoryGrants_And_Waits';
+GO
