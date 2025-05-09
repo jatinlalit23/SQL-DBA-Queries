@@ -182,7 +182,9 @@ WHERE DurationMs > 5000
 
 **************************************************************************************************************************************************************
 
-
+The event action name, "sqlserver.auth_scheme", is invalid, or the object could not be found
+Msg 15151, Level 16, State 28, Line 61
+Cannot alter the event session 'Track_Login_DB_Response', because it does not exist or you do not have permission.
 
 **************************************************************************************************************************************************************
 
