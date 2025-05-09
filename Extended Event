@@ -1,54 +1,60 @@
 📦 Step 1: Create Combined Extended Event Session
+-- Drop the existing session if it exists
 IF EXISTS (SELECT * FROM sys.server_event_sessions WHERE name = 'Track_Login_DB_Response')
+BEGIN
     DROP EVENT SESSION [Track_Login_DB_Response] ON SERVER;
+END
 GO
 
+-- Create a new Extended Event session
 CREATE EVENT SESSION [Track_Login_DB_Response] ON SERVER 
 ADD EVENT sqlserver.login(
     ACTION(
         sqlserver.client_app_name,
         sqlserver.client_hostname,
+        sqlserver.username,
         sqlserver.nt_username,
         sqlserver.server_principal_name,
         sqlserver.session_id,
-        sqlserver.database_name,
-        sqlserver.auth_scheme
+        sqlserver.database_name
     )
 ),
 ADD EVENT sqlserver.logout(
     ACTION(
         sqlserver.client_app_name,
         sqlserver.client_hostname,
+        sqlserver.username,
         sqlserver.nt_username,
         sqlserver.server_principal_name,
         sqlserver.session_id,
-        sqlserver.database_name,
-        sqlserver.auth_scheme
+        sqlserver.database_name
     )
 ),
 ADD EVENT sqlserver.sql_batch_completed(
     ACTION(
         sqlserver.client_app_name,
         sqlserver.client_hostname,
+        sqlserver.username,
         sqlserver.nt_username,
         sqlserver.server_principal_name,
         sqlserver.session_id,
         sqlserver.database_name,
         sqlserver.sql_text
     )
-    WHERE (duration > 1000000) -- 1 sec se upar wale queries
+    WHERE (duration > 1000000) -- Queries taking longer than 1 second
 ),
 ADD EVENT sqlserver.rpc_completed(
     ACTION(
         sqlserver.client_app_name,
         sqlserver.client_hostname,
+        sqlserver.username,
         sqlserver.nt_username,
         sqlserver.server_principal_name,
         sqlserver.session_id,
         sqlserver.database_name,
         sqlserver.sql_text
     )
-    WHERE (duration > 1000000) -- 1 sec se upar wale RPCs
+    WHERE (duration > 1000000) -- RPCs taking longer than 1 second
 )
 ADD TARGET package0.event_file
 (
@@ -58,6 +64,7 @@ ADD TARGET package0.event_file
 );
 GO
 
+-- Start the event session
 ALTER EVENT SESSION [Track_Login_DB_Response] ON SERVER STATE = START;
 GO
 
