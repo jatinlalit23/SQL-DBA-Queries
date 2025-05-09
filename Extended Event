@@ -1,0 +1,125 @@
+📦 Step 1: Create Combined Extended Event Session
+sql
+Copy
+Edit
+-- Drop old session if exists
+IF EXISTS (SELECT * FROM sys.server_event_sessions WHERE name = 'Track_Login_DB_Response')
+DROP EVENT SESSION [Track_Login_DB_Response] ON SERVER;
+GO
+
+-- Create new combined session
+CREATE EVENT SESSION [Track_Login_DB_Response] ON SERVER 
+ADD EVENT sqlserver.login(
+    ACTION(sqlserver.client_hostname, sqlserver.client_app_name, sqlserver.username, 
+           sqlserver.nt_username, sqlserver.server_principal_name, sqlserver.session_id, 
+           sqlserver.database_name, sqlserver.client_ip, sqlserver.auth_scheme)
+),
+ADD EVENT sqlserver.logout(
+    ACTION(sqlserver.client_hostname, sqlserver.client_app_name, sqlserver.username, 
+           sqlserver.nt_username, sqlserver.server_principal_name, sqlserver.session_id, 
+           sqlserver.database_name, sqlserver.client_ip, sqlserver.auth_scheme)
+),
+ADD EVENT sqlserver.sql_batch_completed(
+    ACTION(sqlserver.client_hostname, sqlserver.client_app_name, sqlserver.username, 
+           sqlserver.nt_username, sqlserver.server_principal_name, sqlserver.session_id, 
+           sqlserver.database_name, sqlserver.client_ip, sqlserver.sql_text),
+    WHERE (duration > 1000000) -- Only queries taking >1 sec (optional)
+),
+ADD EVENT sqlserver.rpc_completed(
+    ACTION(sqlserver.client_hostname, sqlserver.client_app_name, sqlserver.username, 
+           sqlserver.nt_username, sqlserver.server_principal_name, sqlserver.session_id, 
+           sqlserver.database_name, sqlserver.client_ip, sqlserver.sql_text),
+    WHERE (duration > 1000000) -- Only queries taking >1 sec (optional)
+)
+ADD TARGET package0.event_file(
+    SET filename=N'C:\XE\Track_Login_DB_Response.xel', 
+        max_file_size=(50), 
+        max_rollover_files=(5)
+);
+GO
+
+-- Start session
+ALTER EVENT SESSION [Track_Login_DB_Response] ON SERVER STATE = START;
+GO
+
+
+
+**************************************************************************************************************************************************************
+
+
+✅ Step 2: Read the Data from This Combined Session
+Ab jo session create hua hai uska query aap aise run karenge:
+
+sql
+Copy
+Edit
+;WITH EventData AS
+(
+    SELECT 
+        event_data.value('(event/@timestamp)[1]', 'datetime2') AS [Timestamp],
+        event_data.value('(event/@name)[1]', 'nvarchar(50)') AS [EventName],
+        event_data.value('(event/action[@name="client_hostname"]/value)[1]', 'nvarchar(256)') AS [ClientHost],
+        event_data.value('(event/action[@name="client_ip"]/value)[1]', 'nvarchar(256)') AS [ClientIP],
+        event_data.value('(event/action[@name="client_app_name"]/value)[1]', 'nvarchar(256)') AS [AppName],
+        event_data.value('(event/action[@name="nt_username"]/value)[1]', 'nvarchar(256)') AS [NTUser],
+        event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') AS [SQLLogin],
+        event_data.value('(event/action[@name="server_principal_name"]/value)[1]', 'nvarchar(256)') AS [ServerUser],
+        event_data.value('(event/action[@name="auth_scheme"]/value)[1]', 'nvarchar(256)') AS [AuthScheme],
+        event_data.value('(event/action[@name="database_name"]/value)[1]', 'nvarchar(256)') AS [Database],
+        event_data.value('(event/action[@name="session_id"]/value)[1]', 'int') AS [SessionID],
+        event_data.value('(event/data[@name="duration"]/value)[1]', 'bigint') AS [DurationMicroSec],
+        event_data.value('(event/action[@name="sql_text"]/value)[1]', 'nvarchar(max)') AS [SQLText]
+    FROM 
+    (
+        SELECT CAST(event_data AS XML) AS event_data
+        FROM sys.fn_xe_file_target_read_file('C:\XE\Track_Login_DB_Response*.xel', NULL, NULL, NULL)
+    ) AS x
+)
+SELECT 
+    Timestamp,
+    EventName,
+    SQLLogin AS LoginUser,
+    NTUser AS WindowsUser,
+    ClientHost,
+    ClientIP,
+    AppName,
+    ServerUser,
+    AuthScheme,
+    Database,
+    SessionID,
+    CASE WHEN DurationMicroSec IS NOT NULL THEN CAST(DurationMicroSec/1000 AS bigint) ELSE NULL END AS DurationMs,
+    SQLText
+FROM EventData
+ORDER BY Timestamp DESC;
+
+*****************************************************************************************************************************************************************
+🔥 Optional Filter You Can Add in Query:
+✅ Specific user filter:
+sql
+Copy
+Edit
+WHERE SQLLogin = 'myuser'
+✅ Specific date range:
+sql
+Copy
+Edit
+WHERE Timestamp >= '2025-05-09'
+✅ Only long queries (>5 sec):
+sql
+Copy
+Edit
+WHERE DurationMs > 5000
+
+**************************************************************************************************************************************************************
+
+
+
+**************************************************************************************************************************************************************
+
+
+
+**************************************************************************************************************************************************************
+
+
+
+*******************************************************************************************************************************************************************
