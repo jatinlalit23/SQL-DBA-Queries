@@ -194,6 +194,57 @@ Msg 15151, Level 16, State 28, Line 61
 Cannot alter the event session 'Track_Login_DB_Response', because it does not exist or you do not have permission.
 
 **************************************************************************************************************************************************************
+;WITH EventData AS
+(
+    SELECT 
+        event_data.value('(event/@timestamp)[1]', 'datetime2') AS [Timestamp],
+        event_data.value('(event/@name)[1]', 'nvarchar(50)') AS [EventName],
+        event_data.value('(event/action[@name="client_hostname"]/value)[1]', 'nvarchar(256)') AS [ClientHost],
+        event_data.value('(event/action[@name="client_ip"]/value)[1]', 'nvarchar(256)') AS [ClientIP],
+        event_data.value('(event/action[@name="client_app_name"]/value)[1]', 'nvarchar(256)') AS [AppName],
+        event_data.value('(event/action[@name="nt_username"]/value)[1]', 'nvarchar(256)') AS [NTUser],
+        event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') AS [SQLLogin],
+        event_data.value('(event/action[@name="server_principal_name"]/value)[1]', 'nvarchar(256)') AS [ServerUser],
+        event_data.value('(event/action[@name="auth_scheme"]/value)[1]', 'nvarchar(256)') AS [AuthScheme],
+        event_data.value('(event/action[@name="database_name"]/value)[1]', 'nvarchar(256)') AS [Database],
+        event_data.value('(event/action[@name="session_id"]/value)[1]', 'int') AS [SessionID],
+        event_data.value('(event/data[@name="duration"]/value)[1]', 'bigint') AS [DurationMicroSec],
+        event_data.value('(event/action[@name="sql_text"]/value)[1]', 'nvarchar(max)') AS [SQLText]
+    FROM 
+    (
+        SELECT CAST(event_data AS XML) AS event_data
+        FROM sys.fn_xe_file_target_read_file('C:\XE\Track_Login_DB_Response*.xel', NULL, NULL, NULL)
+    ) AS x
+),
+SessionStatus AS
+(
+    SELECT 
+        session_id,
+        CASE 
+            WHEN status = 'running' THEN 'Running'
+            WHEN status = 'suspended' THEN 'Suspended'
+            ELSE 'Other'
+        END AS SessionState
+    FROM sys.dm_exec_requests
+)
+SELECT 
+    FORMAT(ed.Timestamp, 'yyyy-MM-dd HH:mm:ss.fff') AS FormattedTimestamp,
+    ed.EventName,
+    ed.SQLLogin AS LoginUser,
+    ed.NTUser AS WindowsUser,
+    ed.ClientHost,
+    ed.ClientIP,
+    ed.AppName,
+    ed.ServerUser,
+    ed.AuthScheme,
+    ed.Database,
+    ed.SessionID,
+    ss.SessionState, -- Join with session status
+    CASE WHEN ed.DurationMicroSec IS NOT NULL THEN CAST(ed.DurationMicroSec / 1000 AS bigint) ELSE NULL END AS DurationMs,
+    ed.SQLText
+FROM EventData ed
+LEFT JOIN SessionStatus ss ON ed.SessionID = ss.session_id -- Join to get session state
+ORDER BY ed.Timestamp DESC;
 
 
 
