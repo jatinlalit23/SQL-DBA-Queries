@@ -1,16 +1,13 @@
 📦 Step 1: Create Combined Extended Event Session
--- Pehle purana session hata do (agar hai)
 IF EXISTS (SELECT * FROM sys.server_event_sessions WHERE name = 'Track_Login_DB_Response')
     DROP EVENT SESSION [Track_Login_DB_Response] ON SERVER;
 GO
 
--- Ab naya session create karte hain
 CREATE EVENT SESSION [Track_Login_DB_Response] ON SERVER 
 ADD EVENT sqlserver.login(
     ACTION(
         sqlserver.client_app_name,
         sqlserver.client_hostname,
-        sqlserver.username,
         sqlserver.nt_username,
         sqlserver.server_principal_name,
         sqlserver.session_id,
@@ -22,7 +19,6 @@ ADD EVENT sqlserver.logout(
     ACTION(
         sqlserver.client_app_name,
         sqlserver.client_hostname,
-        sqlserver.username,
         sqlserver.nt_username,
         sqlserver.server_principal_name,
         sqlserver.session_id,
@@ -34,7 +30,6 @@ ADD EVENT sqlserver.sql_batch_completed(
     ACTION(
         sqlserver.client_app_name,
         sqlserver.client_hostname,
-        sqlserver.username,
         sqlserver.nt_username,
         sqlserver.server_principal_name,
         sqlserver.session_id,
@@ -47,7 +42,6 @@ ADD EVENT sqlserver.rpc_completed(
     ACTION(
         sqlserver.client_app_name,
         sqlserver.client_hostname,
-        sqlserver.username,
         sqlserver.nt_username,
         sqlserver.server_principal_name,
         sqlserver.session_id,
@@ -64,9 +58,9 @@ ADD TARGET package0.event_file
 );
 GO
 
--- Session ko chalu karo
 ALTER EVENT SESSION [Track_Login_DB_Response] ON SERVER STATE = START;
 GO
+
 
 
 
