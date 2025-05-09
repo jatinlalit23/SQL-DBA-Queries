@@ -12,3 +12,60 @@ ADD EVENT sqlserver.sql_batch_completed(
 ADD TARGET package0.event_file(SET filename=N'C:\XE\Track_Login_DB_Response.xel', max_file_size=(50), max_rollover_files=(5))
 WITH (MAX_MEMORY=4096 KB, EVENT_RETENTION_MODE=ALLOW_SINGLE_EVENT_LOSS, MAX_DISPATCH_LATENCY=30 SECONDS, MAX_EVENT_SIZE=0 KB, MEMORY_PARTITION_MODE=NONE, TRACK_CAUSALITY=OFF, STARTUP_STATE=OFF)
 GO
+
+**********************************************************************************************************
+
+DECLARE @YourUserName NVARCHAR(100) = 'YourUserNameHere';  -- 👈 Apna user name daalo yahan
+
+WITH AllEvents AS (
+    SELECT 
+        event_data.value('(event/@name)[1]', 'varchar(50)') AS event_name,
+        event_data.value('(event/@timestamp)[1]', 'datetime2') AS event_time,
+        event_data.value('(event/action[@name="server_principal_name"]/value)[1]', 'varchar(100)') AS login_user,
+        event_data.value('(event/action[@name="session_id"]/value)[1]', 'int') AS session_id,
+        event_data.value('(event/action[@name="client_hostname"]/value)[1]', 'varchar(100)') AS client_hostname,
+        event_data.value('(event/data[@name="client_ip"]/value)[1]', 'varchar(50)') AS client_ip,
+        event_data.value('(event/action[@name="database_name"]/value)[1]', 'varchar(100)') AS database_name,
+        event_data.value('(event/data[@name="statement"]/value)[1]', 'varchar(max)') AS query_text,
+        event_data.value('(event/data[@name="duration"]/value)[1]', 'bigint')/1000 AS duration_ms  -- microsec to ms
+    FROM 
+    (
+        SELECT CAST(event_data AS XML) AS event_data
+        FROM sys.fn_xe_file_target_read_file('C:\XE\Track_Login_DB_Response*.xel', null, null, null)
+    ) AS data
+    WHERE event_data.value('(event/@name)[1]', 'varchar(50)') IN ('login', 'sql_batch_starting', 'sql_batch_completed')
+)
+
+-- Get Login Source Info
+, LoginInfo AS (
+    SELECT DISTINCT 
+        session_id,
+        login_user,
+        client_hostname,
+        client_ip
+    FROM AllEvents
+    WHERE event_name = 'login'
+)
+
+-- Combine Query Execution Info
+SELECT 
+    q.session_id,
+    l.login_user,
+    l.client_hostname AS source_machine,
+    l.client_ip,
+    q.database_name,
+    q.query_text,
+    q.event_time AS query_start_time,
+    DATEADD(MILLISECOND, ISNULL(c.duration_ms,0), q.event_time) AS query_end_time,
+    c.duration_ms
+FROM AllEvents q
+LEFT JOIN AllEvents c 
+    ON q.session_id = c.session_id 
+    AND c.event_name = 'sql_batch_completed' 
+    AND c.query_text = q.query_text
+LEFT JOIN LoginInfo l 
+    ON q.session_id = l.session_id
+WHERE 
+    q.event_name = 'sql_batch_starting'
+    AND l.login_user = @YourUserName
+ORDER BY query_start_time DESC;
