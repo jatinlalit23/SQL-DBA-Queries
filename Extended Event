@@ -1,44 +1,70 @@
 📦 Step 1: Create Combined Extended Event Session
-sql
-Copy
-Edit
--- Drop old session if exists
+-- Pehle purana session hata do (agar hai)
 IF EXISTS (SELECT * FROM sys.server_event_sessions WHERE name = 'Track_Login_DB_Response')
-DROP EVENT SESSION [Track_Login_DB_Response] ON SERVER;
+    DROP EVENT SESSION [Track_Login_DB_Response] ON SERVER;
 GO
 
--- Create new combined session
+-- Ab naya session create karte hain
 CREATE EVENT SESSION [Track_Login_DB_Response] ON SERVER 
 ADD EVENT sqlserver.login(
-    ACTION(sqlserver.client_hostname, sqlserver.client_app_name, sqlserver.username, 
-           sqlserver.nt_username, sqlserver.server_principal_name, sqlserver.session_id, 
-           sqlserver.database_name, sqlserver.client_ip, sqlserver.auth_scheme)
+    ACTION(
+        sqlserver.client_app_name,
+        sqlserver.client_hostname,
+        sqlserver.username,
+        sqlserver.nt_username,
+        sqlserver.server_principal_name,
+        sqlserver.session_id,
+        sqlserver.database_name,
+        sqlserver.auth_scheme
+    )
 ),
 ADD EVENT sqlserver.logout(
-    ACTION(sqlserver.client_hostname, sqlserver.client_app_name, sqlserver.username, 
-           sqlserver.nt_username, sqlserver.server_principal_name, sqlserver.session_id, 
-           sqlserver.database_name, sqlserver.client_ip, sqlserver.auth_scheme)
+    ACTION(
+        sqlserver.client_app_name,
+        sqlserver.client_hostname,
+        sqlserver.username,
+        sqlserver.nt_username,
+        sqlserver.server_principal_name,
+        sqlserver.session_id,
+        sqlserver.database_name,
+        sqlserver.auth_scheme
+    )
 ),
 ADD EVENT sqlserver.sql_batch_completed(
-    ACTION(sqlserver.client_hostname, sqlserver.client_app_name, sqlserver.username, 
-           sqlserver.nt_username, sqlserver.server_principal_name, sqlserver.session_id, 
-           sqlserver.database_name, sqlserver.client_ip, sqlserver.sql_text),
-    WHERE (duration > 1000000) -- Only queries taking >1 sec (optional)
+    ACTION(
+        sqlserver.client_app_name,
+        sqlserver.client_hostname,
+        sqlserver.username,
+        sqlserver.nt_username,
+        sqlserver.server_principal_name,
+        sqlserver.session_id,
+        sqlserver.database_name,
+        sqlserver.sql_text
+    )
+    WHERE (duration > 1000000) -- 1 sec se upar wale queries
 ),
 ADD EVENT sqlserver.rpc_completed(
-    ACTION(sqlserver.client_hostname, sqlserver.client_app_name, sqlserver.username, 
-           sqlserver.nt_username, sqlserver.server_principal_name, sqlserver.session_id, 
-           sqlserver.database_name, sqlserver.client_ip, sqlserver.sql_text),
-    WHERE (duration > 1000000) -- Only queries taking >1 sec (optional)
+    ACTION(
+        sqlserver.client_app_name,
+        sqlserver.client_hostname,
+        sqlserver.username,
+        sqlserver.nt_username,
+        sqlserver.server_principal_name,
+        sqlserver.session_id,
+        sqlserver.database_name,
+        sqlserver.sql_text
+    )
+    WHERE (duration > 1000000) -- 1 sec se upar wale RPCs
 )
-ADD TARGET package0.event_file(
-    SET filename=N'C:\XE\Track_Login_DB_Response.xel', 
-        max_file_size=(50), 
+ADD TARGET package0.event_file
+(
+    SET filename=N'C:\XE\Track_Login_DB_Response.xel',
+        max_file_size=(50),
         max_rollover_files=(5)
 );
 GO
 
--- Start session
+-- Session ko chalu karo
 ALTER EVENT SESSION [Track_Login_DB_Response] ON SERVER STATE = START;
 GO
 
