@@ -62,6 +62,52 @@ ALTER EVENT SESSION [Track_Login_DB_Response] ON SERVER STATE = START;
 GO
 
 
+***********************************************************************
+
+-- Drop the session if it already exists
+IF EXISTS (SELECT * FROM sys.server_event_sessions WHERE name = 'CaptureLoginEvents')
+BEGIN
+    DROP EVENT SESSION CaptureLoginEvents ON SERVER;
+END
+
+-- Create the Extended Event session
+CREATE EVENT SESSION CaptureLoginEvents
+ON SERVER
+ADD EVENT sqlserver.login(
+    ACTION(sqlserver.sql_text, sqlserver.client_app_name, sqlserver.database_name, sqlserver.session_id)
+),
+ADD EVENT sqlserver.sql_statement_completed(
+    ACTION(sqlserver.sql_text, sqlserver.database_id, sqlserver.session_id)
+)
+ADD TARGET package0.event_file(SET filename = 'C:\Temp\CaptureLoginEvents.xel')
+WITH (MAX_MEMORY = 4096 KB, EVENT_RETENTION_MODE = ALLOW_SINGLE_EVENT_LOSS, MAX_DISPATCH_LATENCY = 30 SECONDS, MAX_EVENT_SIZE = 0, MEMORY_PARTITION_MODE = NONE);
+
+-- Start the event session
+ALTER EVENT SESSION CaptureLoginEvents ON SERVER STATE = START;
+***********************************
+
+-- Drop the session if it already exists
+IF EXISTS (SELECT * FROM sys.server_event_sessions WHERE name = 'CaptureUserEvents')
+BEGIN
+    DROP EVENT SESSION CaptureUserEvents ON SERVER;
+END
+
+-- Create the Extended Event session
+CREATE EVENT SESSION CaptureUserEvents
+ON SERVER
+ADD EVENT sqlserver.login(
+    ACTION(sqlserver.sql_text, sqlserver.client_app_name, sqlserver.database_name, sqlserver.session_id)
+    WHERE sqlserver.username = 'sushil'
+),
+ADD EVENT sqlserver.sql_statement_completed(
+    ACTION(sqlserver.sql_text, sqlserver.database_id, sqlserver.session_id)
+    WHERE sqlserver.username = 'sushil'
+)
+ADD TARGET package0.event_file(SET filename = 'C:\Temp\CaptureUserEvents.xel')
+WITH (MAX_MEMORY = 4096 KB, EVENT_RETENTION_MODE = ALLOW_SINGLE_EVENT_LOSS, MAX_DISPATCH_LATENCY = 30 SECONDS, MAX_EVENT_SIZE = 0, MEMORY_PARTITION_MODE = NONE);
+
+-- Start the event session
+ALTER EVENT SESSION CaptureUserEvents ON SERVER STATE = START;
 
 
 **************************************************************************************************************************************************************
