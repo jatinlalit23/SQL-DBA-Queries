@@ -188,10 +188,13 @@ WHERE DurationMs > 5000
 
 
 **************************************************************************************************************************************************************
+Msg 207, Level 16, State 1, Line 40
+Invalid column name 'host_name'.
+Msg 207, Level 16, State 1, Line 41
+Invalid column name 'program_name'.
+Msg 207, Level 16, State 1, Line 42
+Invalid column name 'login_name'.
 
-The event action name, "sqlserver.auth_scheme", is invalid, or the object could not be found
-Msg 15151, Level 16, State 28, Line 61
-Cannot alter the event session 'Track_Login_DB_Response', because it does not exist or you do not have permission.
 
 **************************************************************************************************************************************************************
 ;WITH EventData AS
