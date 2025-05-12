@@ -69,3 +69,21 @@ WHERE
     q.event_name = 'sql_batch_starting'
     AND l.login_user = @YourUserName
 ORDER BY query_start_time DESC;
+
+************************************************************************************************************************************
+
+SELECT 
+    event_data.value('(event/@timestamp)[1]', 'datetime2') AS [Timestamp],
+    event_data.value('(event/@name)[1]', 'nvarchar(50)') AS [EventName],
+    event_data.value('(event/action[@name="client_hostname"]/value)[1]', 'nvarchar(256)') AS [ClientHost],
+    event_data.value('(event/action[@name="client_app_name"]/value)[1]', 'nvarchar(256)') AS [AppName],
+    event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') AS [SQLLogin],
+    event_data.value('(event/action[@name="sql_text"]/value)[1]', 'nvarchar(max)') AS [SQLText],
+    event_data.value('(event/action[@name="server_name"]/value)[1]', 'nvarchar(256)') AS [SourceServer]  -- Added server_name
+FROM 
+(
+    SELECT CAST(event_data AS XML) AS event_data
+    FROM sys.fn_xe_file_target_read_file('C:\XE\Track_Login_DB_Response*.xel', NULL, NULL, NULL)
+) AS x
+ORDER BY [Timestamp] DESC;
+
