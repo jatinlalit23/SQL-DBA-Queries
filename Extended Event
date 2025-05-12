@@ -183,7 +183,7 @@ ORDER BY [Timestamp] DESC;
 
 
 ***************************************************************************************************************
-
+--Version 1: Using a Variable (Declare First)s
 SELECT 
     FORMAT(
         event_data.value('(event/@timestamp)[1]', 'datetime2'), 
@@ -208,8 +208,29 @@ ORDER BY [Timestamp] DESC;
 
 
 ******************************************************************************************************************
+--Version 2: Hardcoded Username (No Variable)
 
-
+SELECT 
+    FORMAT(
+        event_data.value('(event/@timestamp)[1]', 'datetime2'), 
+        'yyyy-MM-dd HH:mm:ss.fff'
+    ) AS [Timestamp],
+    event_data.value('(event/@name)[1]', 'nvarchar(50)') AS [EventName],
+    event_data.value('(event/action[@name="client_hostname"]/value)[1]', 'nvarchar(256)') AS [ClientHost],
+    event_data.value('(event/action[@name="client_app_name"]/value)[1]', 'nvarchar(256)') AS [AppName],
+    event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') AS [SQLLogin],
+    event_data.value('(event/action[@name="sql_text"]/value)[1]', 'nvarchar(max)') AS [SQLText],
+    event_data.value('(event/action[@name="server_name"]/value)[1]', 'nvarchar(256)') AS [SourceServer]
+FROM 
+(
+    SELECT CAST(event_data AS XML) AS event_data
+    FROM sys.fn_xe_file_target_read_file('C:\XE\Track_Login_DB_Response*.xel', NULL, NULL, NULL)
+) AS x
+WHERE 
+    -- Directly filter by the username (replace 'YourTargetUser')
+    event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') = 'YourTargetUser'
+    AND event_data.value('(event/@timestamp)[1]', 'datetime2') >= DATEADD(HOUR, -5, GETUTCDATE())
+ORDER BY [Timestamp] DESC;
 
 
 ******************************************************************************************************************
