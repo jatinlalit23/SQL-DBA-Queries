@@ -86,4 +86,22 @@ FROM
     FROM sys.fn_xe_file_target_read_file('C:\XE\Track_Login_DB_Response*.xel', NULL, NULL, NULL)
 ) AS x
 ORDER BY [Timestamp] DESC;
+**********************************************************************************************************************
+
+SELECT 
+    -- Human-readable timestamp (e.g., "2025-05-12 14:30:45.123")
+    FORMAT(
+        event_data.value('(event/@timestamp)[1]', 'datetime2'), 
+        'yyyy-MM-dd HH:mm:ss.fff'
+    ) AS [Timestamp],
+    
+    event_data.value('(event/@name)[1]', 'nvarchar(50)') AS [EventName],
+    event_data.value('(event/action[@name="client_hostname"]/value)[1]', 'nvarchar(256)') AS [ClientHost],
+    event_data.value('(event/action[@name="sql_text"]/value)[1]', 'nvarchar(max)') AS [SQLText]
+FROM 
+(
+    SELECT CAST(event_data AS XML) AS event_data
+    FROM sys.fn_xe_file_target_read_file('C:\XE\Track_Login_DB_Response*.xel', NULL, NULL, NULL)
+) AS x
+ORDER BY [Timestamp] DESC;
 
