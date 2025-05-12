@@ -129,3 +129,29 @@ FROM
     FROM sys.fn_xe_file_target_read_file('C:\XE\Track_Login_DB_Response*.xel', NULL, NULL, NULL)
 ) AS x
 ORDER BY [LocalTimestamp] DESC;
+**************************************************************************************************************
+
+DECLARE @Username NVARCHAR(256) = 'YourUsernameHere';  -- Replace with the target username
+
+SELECT 
+    FORMAT(
+        event_data.value('(event/@timestamp)[1]', 'datetime2'), 
+        'yyyy-MM-dd HH:mm:ss.fff'
+    ) AS [FormattedTimestamp],
+    event_data.value('(event/@name)[1]', 'nvarchar(50)') AS [EventName],
+    event_data.value('(event/action[@name="client_hostname"]/value)[1]', 'nvarchar(256)') AS [ClientHost],
+    event_data.value('(event/action[@name="client_app_name"]/value)[1]', 'nvarchar(256)') AS [AppName],
+    event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') AS [SQLLogin],
+    event_data.value('(event/action[@name="sql_text"]/value)[1]', 'nvarchar(max)') AS [SQLText],
+    event_data.value('(event/action[@name="server_name"]/value)[1]', 'nvarchar(256)') AS [SourceServer]
+FROM 
+(
+    SELECT CAST(event_data AS XML) AS event_data
+    FROM sys.fn_xe_file_target_read_file('C:\XE\Track_Login_DB_Response*.xel', NULL, NULL, NULL)
+) AS x
+WHERE 
+    -- Filter by username (case-sensitive)
+    event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') = @Username
+    -- Filter by timestamp (last 5 hours from current UTC time)
+    AND event_data.value('(event/@timestamp)[1]', 'datetime2') >= DATEADD(HOUR, -5, GETUTCDATE())
+ORDER BY [FormattedTimestamp] DESC;
