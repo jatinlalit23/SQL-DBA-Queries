@@ -1,70 +1,22 @@
-CREATE EVENT SESSION [Track_Login_DB_Response] ON SERVER 
-ADD EVENT sqlserver.login(
-    ACTION(
-        sqlserver.client_app_name, 
-        sqlserver.client_hostname, 
-        sqlserver.database_name, 
-        sqlserver.nt_username, 
-        sqlserver.server_principal_name, 
-        sqlserver.session_id, 
-        sqlserver.username, 
-        sqlserver.server_name
-    )
-),
-ADD EVENT sqlserver.logout(
-    ACTION(
-        sqlserver.client_app_name, 
-        sqlserver.client_hostname, 
-        sqlserver.database_name, 
-        sqlserver.nt_username, 
-        sqlserver.server_principal_name, 
-        sqlserver.session_id, 
-        sqlserver.username, 
-        sqlserver.server_name
-    )
-),
-ADD EVENT sqlserver.rpc_completed(
-    ACTION(
-        sqlserver.client_app_name, 
-        sqlserver.client_hostname, 
-        sqlserver.database_name, 
-        sqlserver.nt_username, 
-        sqlserver.server_principal_name, 
-        sqlserver.session_id, 
-        sqlserver.sql_text, 
-        sqlserver.username, 
-        sqlserver.server_name,
-        sqlserver.execution_time  -- Added for query execution time
-    )
-    WHERE ([duration] > 1000000)  -- Filters queries longer than 1 second
-),
-ADD EVENT sqlserver.sql_batch_completed(
-    ACTION(
-        sqlserver.client_app_name, 
-        sqlserver.client_hostname, 
-        sqlserver.database_name, 
-        sqlserver.nt_username, 
-        sqlserver.server_principal_name, 
-        sqlserver.session_id, 
-        sqlserver.sql_text, 
-        sqlserver.username, 
-        sqlserver.server_name,
-        sqlserver.execution_time  -- Added for query execution time
-    )
-    WHERE ([duration] > 1000000)
-)
-ADD TARGET package0.event_file(
-    SET filename = N'C:\XE\Track_Login_DB_Response.xel', 
-    max_file_size = 50, 
-    max_rollover_files = 5
-)
-WITH (
-    MAX_MEMORY = 4096 KB, 
-    EVENT_RETENTION_MODE = ALLOW_SINGLE_EVENT_LOSS,
-    MAX_DISPATCH_LATENCY = 30 SECONDS, 
-    MAX_EVENT_SIZE = 0 KB, 
-    MEMORY_PARTITION_MODE = NONE, 
-    TRACK_CAUSALITY = OFF, 
-    STARTUP_STATE = OFF
-);
-GO
+SELECT 
+    FORMAT(event_data.value('(event/@timestamp)[1]', 'datetime2'), 'yyyy-MM-dd HH:mm:ss.fff') AS [Timestamp],
+    event_data.value('(event/@name)[1]', 'nvarchar(50)') AS [EventName],
+    event_data.value('(event/action[@name="client_hostname"]/value)[1]', 'nvarchar(256)') AS [ClientHost],
+    event_data.value('(event/action[@name="client_app_name"]/value)[1]', 'nvarchar(256)') AS [AppName],
+    event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') AS [SQLLogin],
+    event_data.value('(event/action[@name="sql_text"]/value)[1]', 'nvarchar(max)') AS [SQLText],
+    event_data.value('(event/action[@name="server_name"]/value)[1]', 'nvarchar(256)') AS [SourceServer],
+    LAG(event_data.value('(event/@timestamp)[1]', 'datetime2')) OVER (PARTITION BY event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') ORDER BY event_data.value('(event/@timestamp)[1]', 'datetime2')) AS [LoginTime],
+    event_data.value('(event/@timestamp)[1]', 'datetime2') AS [LogoutTime],
+    DATEDIFF(SECOND, 
+        LAG(event_data.value('(event/@timestamp)[1]', 'datetime2')) OVER (PARTITION BY event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') ORDER BY event_data.value('(event/@timestamp)[1]', 'datetime2')), 
+        event_data.value('(event/@timestamp)[1]', 'datetime2')) AS [SessionDurationSeconds]
+FROM 
+(
+    SELECT CAST(event_data AS XML) AS event_data
+    FROM sys.fn_xe_file_target_read_file('C:\XE\Track_Login_DB_Response*.xel', NULL, NULL, NULL)
+) AS x
+WHERE 
+    event_data.value('(event/action[@name="username"]/value)[1]', 'nvarchar(256)') = 'YourTargetUser'
+    AND event_data.value('(event/@timestamp)[1]', 'datetime2') >= DATEADD(HOUR, -5, GETUTCDATE())
+ORDER BY [Timestamp] DESC;
