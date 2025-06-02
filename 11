@@ -1,4 +1,37 @@
 
+
+USE master;
+GO
+
+CREATE TRIGGER trg_CaptureAlterDB
+ON ALL SERVER
+FOR ALTER_DATABASE
+AS
+BEGIN
+    DECLARE @data XML = EVENTDATA();
+    INSERT INTO AuditDB.dbo.AlterDB_Log
+    (
+        EventType,
+        DatabaseName,
+        LoginName,
+        HostName,
+        CommandText,
+        EventTime
+    )
+    VALUES
+    (
+        @data.value('(/EVENT_INSTANCE/EventType)[1]', 'NVARCHAR(100)'),
+        @data.value('(/EVENT_INSTANCE/DatabaseName)[1]', 'NVARCHAR(100)'),
+        SYSTEM_USER,
+        HOST_NAME(),
+        @data.value('(/EVENT_INSTANCE/TSQLCommand/CommandText)[1]', 'NVARCHAR(MAX)'),
+        GETDATE()
+    );
+END;
+GO
+
+
+--------------------------------------------------------------------------------------------------
 -- Find location of the default trace
 DECLARE @path NVARCHAR(260);
 SELECT @path = path FROM sys.traces WHERE is_default = 1;
