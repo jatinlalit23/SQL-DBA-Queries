@@ -1,3 +1,28 @@
+
+-- Find location of the default trace
+DECLARE @path NVARCHAR(260);
+SELECT @path = path FROM sys.traces WHERE is_default = 1;
+
+-- Check ALTER DATABASE events
+SELECT 
+    te.name AS EventName,
+    t.DatabaseName,
+    t.ObjectName,
+    t.TextData,
+    t.LoginName,
+    t.HostName,
+    t.ApplicationName,
+    t.StartTime
+FROM sys.fn_trace_gettable(@path, DEFAULT) t
+JOIN sys.trace_events te ON t.EventClass = te.trace_event_id
+WHERE te.name = 'Object:Altered'
+  AND t.TextData LIKE '%READ_COMMITTED_SNAPSHOT%'
+  AND t.DatabaseName = 'YourDatabaseName'
+ORDER BY t.StartTime DESC;
+
+
+
+------------------------------------------------------------------------------------------
 SELECT
     r.session_id,
     r.status,
