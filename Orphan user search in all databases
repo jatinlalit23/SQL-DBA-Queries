@@ -1,0 +1,92 @@
+-- =====================================================
+-- Find Orphan Users Across All Databases
+-- Server Name, Database Name, Orphan User Name
+-- =====================================================
+
+USE master
+GO
+
+-- Create temporary table to store results
+IF OBJECT_ID('tempdb..#OrphanUsers', 'U') IS NOT NULL
+    DROP TABLE #OrphanUsers;
+
+CREATE TABLE #OrphanUsers (
+    ServerName NVARCHAR(128),
+    DatabaseName NVARCHAR(128),
+    OrphanUserName NVARCHAR(128),
+    UserType NVARCHAR(50),
+    UserSID VARBINARY(85),
+    AuthenticationType NVARCHAR(60)
+);
+
+-- Declare variables
+DECLARE @DBName NVARCHAR(128);
+DECLARE @SQLCmd NVARCHAR(MAX);
+DECLARE @ServerName NVARCHAR(128) = @@SERVERNAME;
+
+-- Cursor to iterate through all databases (excluding system databases)
+DECLARE db_cursor CURSOR FOR
+    SELECT name 
+    FROM sys.databases
+    WHERE database_id > 4  -- Exclude master, model, msdb, tempdb
+      AND state = 0        -- Only online databases
+      AND is_read_only = 0 -- Only read-write databases
+    ORDER BY name;
+
+OPEN db_cursor;
+FETCH NEXT FROM db_cursor INTO @DBName;
+
+-- Loop through each database
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Build dynamic SQL to find orphan users in current database
+    SET @SQLCmd = N'
+    USE [' + @DBName + '];
+    INSERT INTO #OrphanUsers (ServerName, DatabaseName, OrphanUserName, UserType, UserSID, AuthenticationType)
+    SELECT 
+        ''' + @ServerName + ''' AS ServerName,
+        DB_NAME() AS DatabaseName,
+        dp.name AS OrphanUserName,
+        dp.type_desc AS UserType,
+        dp.sid AS UserSID,
+        dp.authentication_type_desc AS AuthenticationType
+    FROM sys.database_principals dp
+    LEFT JOIN sys.server_principals sp ON dp.sid = sp.sid
+    WHERE sp.sid IS NULL
+        AND dp.type IN (''U'', ''S'', ''G'')  -- User, SQL login, or Windows group
+        AND dp.name NOT IN (''dbo'', ''guest'', ''INFORMATION_SCHEMA'', ''sys'', 
+                            ''system_function_schema'', ''MS_DataCollectorInternalUser'')
+        AND dp.authentication_type > 0;
+    ';
+    
+    -- Execute the dynamic SQL
+    BEGIN TRY
+        EXEC sp_executesql @SQLCmd;
+    END TRY
+    BEGIN CATCH
+        PRINT 'Error processing database: ' + @DBName + ' - ' + ERROR_MESSAGE();
+    END CATCH
+    
+    FETCH NEXT FROM db_cursor INTO @DBName;
+END
+
+CLOSE db_cursor;
+DEALLOCATE db_cursor;
+
+-- Return results in single resultset
+SELECT 
+    ServerName,
+    DatabaseName,
+    OrphanUserName,
+    UserType,
+   -- CONVERT(VARCHAR(MAX), UserSID, 2) AS UserSID,
+    AuthenticationType
+FROM #OrphanUsers
+ORDER BY 
+    ServerName, 
+    DatabaseName, 
+    OrphanUserName;
+
+-- Cleanup
+DROP TABLE #OrphanUsers;
+GO
